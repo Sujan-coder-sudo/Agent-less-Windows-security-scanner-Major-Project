@@ -27,10 +27,12 @@ The scanner operates in distinct phases:
 - Requires valid Windows credentials (local or domain)
 
 ### Phase 4: Data Ingestion & Storage
-- Standalone PostgreSQL ingestion pipeline
+- **Phase 2 Ingestion**: Network exposure data (ports, services, hosts)
+- **Phase 3 Ingestion**: OS inspection data (13 security categories)
+- Standalone PostgreSQL ingestion pipelines
 - Atomic transaction handling
-- Replay protection via source file hashing
-- Structured storage: scans → hosts → ports → services
+- Replay protection via SHA-256 source file hashing
+- Secure file disposal after successful ingestion
 
 ## 📋 Prerequisites
 
@@ -85,7 +87,7 @@ python runner.py
 
 **Output**: `phase2/output/phase2_exposure.json`
 
-### 3. Ingest Scan Data (Phase 4)
+### 3. Ingest Phase 2 Scan Data
 ```powershell
 cd agentless-scanner
 python phase4/phase2_ingest_standalone.py
@@ -113,32 +115,83 @@ python main.py
 ```
 
 **Requires**: Valid Windows credentials (domain or local account)
+**Output**: `phase3/output/scan_report.json`
+
+### 5. Ingest Phase 3 Security Data
+```powershell
+cd agentless-scanner
+python phase4/phase3_ingest_standalone.py
+```
+
+**Expected Output**:
+```
+[INFO] Starting Phase 3 ingestion...
+[DEBUG] Resolved Phase 3 report path: C:\agentless-scanner\phase3\output\scan_report.json
+[DEBUG] Detected top-level JSON type: list (array)
+[DEBUG] Found category: OS Profiling
+[DEBUG] Found category: Hotfix Audit
+[DEBUG] Found category: Software Inventory
+...
+[DEBUG] All 13 required categories present
+[DEBUG] New scan run created with ID: 1
+[DEBUG] Inserting category: OS Profiling
+...
+[INFO] All categories inserted successfully
+[DEBUG] Secure disposal completed
+[+] Phase 3 scan_report.json ingested and securely disposed
+```
 
 ## 🗂️ Database Schema
 
-### `scans`
+### Phase 2 Network Exposure Tables
+
+#### `scans`
 - Tracks individual scan executions
 - Links to all discovered hosts
 
-### `hosts`
+#### `hosts`
 - Discovered network hosts
 - IP address, hostname, up/down status
 
-### `ports`
+#### `ports`
 - Open/closed/filtered ports per host
 - Protocol (TCP/UDP), state, reason
 
-### `services`
+#### `services`
 - Service identification per port
 - Product, version, confidence level
 
-### `os_profile`
+#### `os_profile`
 - Operating system fingerprints
 - OS family, name, accuracy score
 
-### `network_exposure`
+#### `network_exposure`
 - Aggregated exposure metrics per host
 - Open port counts, exposure type
+
+### Phase 3 Security Assessment Tables
+
+#### `scan_runs`
+- Tracks Phase 3 scan executions
+- SHA-256 hash for duplicate prevention
+- Ingestion timestamp
+
+#### `scan_data`
+- Stores security category data as JSONB
+- 13 security categories:
+  - OS Profiling
+  - Hotfix Audit
+  - Software Inventory
+  - Service Status
+  - EDR / AV Health
+  - Audit Policy
+  - Firewall Rules
+  - Neighbor Discovery
+  - Interface Statistics
+  - Infrastructure Link
+  - Persistence Mechanisms
+  - User / Group Audit
+  - Active Connections
 
 ## 🔒 Security Considerations
 
@@ -200,38 +253,64 @@ DROP TABLE IF EXISTS services, ports, hosts, scans CASCADE;
 **Cause**: No hosts found in scan results  
 **Fix**: Verify target is reachable and Nmap completed successfully
 
-## 📊 Example Workflow
+## 📊 Example Workflows
 
+### Complete Security Assessment
 ```powershell
 # 1. Activate environment
 .\.venv\Scripts\Activate.ps1
 
-# 2. Run discovery scan
-cd phase2
+# 2. Run network discovery scan (Phase 2)
+cd agentless-scanner\phase2
 python runner.py  # Creates phase2_exposure.json
 
-# 3. Ingest to database
+# 3. Ingest network exposure data
 cd ..
-python phase4/phase2_ingest_standalone.py
+python phase4\phase2_ingest_standalone.py
 
-# 4. (Optional) Run authenticated inspection
+# 4. Run authenticated OS inspection (Phase 3)
 cd phase3
 python main.py  # Requires Windows credentials
+
+# 5. Ingest security assessment data
+cd ..
+python phase4\phase3_ingest_standalone.py
+```
+
+### Network Exposure Only
+```powershell
+cd agentless-scanner\phase2
+python runner.py
+cd ..
+python phase4\phase2_ingest_standalone.py
+```
+
+### OS Inspection Only
+```powershell
+cd agentless-scanner\phase3
+python main.py
+cd ..
+python phase4\phase3_ingest_standalone.py
 ```
 
 ## 📁 Project Structure
 
 ```
 agentless-scanner/
-├── phase2/              # Network exposure scanning
-│   ├── runner.py        # Main scan orchestrator
-│   └── output/          # JSON scan results
-├── phase3/              # OS inspection (WinRM)
-│   ├── main.py          # Authenticated scanner
-│   ├── auth.py          # Windows credential validation
-│   └── core.py          # WinRM session management
-└── phase4/              # Data ingestion
-    └── phase2_ingest_standalone.py  # PostgreSQL loader
+├── phase2/                           # Network exposure scanning
+│   ├── runner.py                     # Main scan orchestrator
+│   ├── core1.py                      # Nmap wrapper
+│   └── output/                       # JSON scan results
+│       └── phase2_exposure.json      # Network exposure data
+├── phase3/                           # OS inspection (WinRM)
+│   ├── main.py                       # Authenticated scanner
+│   ├── auth.py                       # Windows credential validation
+│   ├── core1.py                      # WinRM session management
+│   └── output/                       # Security assessment results
+│       └── scan_report.json          # 13 security categories
+└── phase4/                           # Data ingestion pipelines
+    ├── phase2_ingest_standalone.py   # Network exposure loader
+    └── phase3_ingest_standalone.py   # Security assessment loader
 ```
 
 ## 🔐 Production Deployment
