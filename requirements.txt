@@ -27,3 +27,6 @@ winrt-Windows.Foundation==3.2.1
 winrt-Windows.Security.Credentials.UI==3.2.1
 winrt-Windows.UI==3.2.1
 winsdk==1.0.0b10
+psycopg2-binary==2.9.6
+sqlalchemy==2.0.28
+pathlib2==2.3.0
