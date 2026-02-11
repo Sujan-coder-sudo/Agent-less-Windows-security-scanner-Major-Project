@@ -12,7 +12,7 @@ from psycopg.rows import dict_row
 DB_CONFIG = {
     "dbname": "agentless_scanner",
     "user": "postgres",
-    "password": "changeme",
+    "password": "SomSonR@2714",
     "host": "localhost",
     "port": 5432,
 }

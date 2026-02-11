@@ -56,7 +56,7 @@ PHASE3_REPORT = PROJECT_ROOT / "phase3" / "output" / "scan_report.json"
 DB_CONFIG = {
     "dbname": "agentless_scanner",
     "user": "postgres",
-    "password": "changeme",
+    "password": "SomSonR@2714",
     "host": "localhost",
     "port": 5432,
 }
@@ -115,14 +115,14 @@ def create_schema(cur):
 
 def load_report():
     """
-    Load Phase 3 scan report from JSON file and extract categories.
+    Load Phase 3 scan report from JSON file and extract categories using recursive search.
     
     Returns:
         dict: Dictionary mapping category names to their data
         
     Raises:
         FileNotFoundError: If scan_report.json does not exist
-        ValueError: If JSON structure is invalid or categories are missing
+        ValueError: If JSON structure is invalid or no categories are found
     """
     print(f"[DEBUG] Resolved Phase 3 report path: {PHASE3_REPORT}")
     print(f"[DEBUG] Phase 3 report exists: {PHASE3_REPORT.exists()}")
@@ -134,32 +134,44 @@ def load_report():
     with open(PHASE3_REPORT, "r", encoding="utf-8") as f:
         data = json.load(f)
     
-    # Defensive debugging - print detected structure type
-    if isinstance(data, list):
-        print(f"[DEBUG] Detected top-level JSON type: list (array)")
-        print(f"[DEBUG] Number of top-level elements: {len(data)}")
-    elif isinstance(data, dict):
-        print(f"[DEBUG] Detected top-level JSON type: dict (object)")
-        print(f"[DEBUG] Top-level keys: {list(data.keys())}")
-    else:
-        raise ValueError(f"Unexpected JSON structure: {type(data)}")
-    
-    # Process the array structure
-    # Phase 3 outputs an array of category objects
-    if not isinstance(data, list):
-        raise ValueError(f"Expected JSON array, got {type(data)}")
-    
-    # Extract categories from the array
-    # Filter out any wrapper objects (they have 'results' key instead of 'category')
     categories = {}
-    for item in data:
-        if isinstance(item, dict) and "category" in item:
-            category_name = item["category"]
-            categories[category_name] = item
-            print(f"[DEBUG] Found category: {category_name}")
+
+    def _extract_recursive(obj, depth=0):
+        """
+        Recursively traverse JSON to find objects with 'category' key.
+        """
+        indent = "  " * depth
+        
+        if isinstance(obj, dict):
+            # Check if this dict IS a category object
+            if "category" in obj:
+                cat_name = obj["category"]
+                # We only want valid categories from our known list
+                if cat_name in EXPECTED_CATEGORIES:
+                    categories[cat_name] = obj
+                    print(f"[DEBUG] {indent}Found category: {cat_name}")
+                return
+
+            # Otherwise traverse values
+            # print(f"[DEBUG] {indent}Dict keys: {list(obj.keys())}")
+            for key, value in obj.items():
+                if isinstance(value, (dict, list)):
+                    _extract_recursive(value, depth + 1)
+                    
+        elif isinstance(obj, list):
+            # print(f"[DEBUG] {indent}List length: {len(obj)}")
+            for item in obj:
+                if isinstance(item, (dict, list)):
+                    _extract_recursive(item, depth + 1)
+
+    print("[DEBUG] Starting recursive extraction...")
+    _extract_recursive(data)
     
     print(f"[DEBUG] Total categories extracted: {len(categories)}")
     
+    if not categories:
+        raise ValueError("No categories found in scan_report.json")
+        
     return categories
 
 
