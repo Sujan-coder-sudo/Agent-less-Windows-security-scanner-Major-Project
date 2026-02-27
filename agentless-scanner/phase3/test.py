@@ -13,7 +13,7 @@ import json
 import os
 from datetime import datetime
 
-from core import (
+from core1 import (
     run_powershell,
     scan_os_profiling,
     scan_hotfix_audit,

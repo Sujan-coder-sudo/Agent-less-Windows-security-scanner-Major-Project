@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agentless Security Scanner Dashboard</title>
+    <link rel="stylesheet" href="css/style.css">
+    <!-- Google Fonts for Modern Typography -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="layout-wrapper">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <span class="logo-icon">🛡️</span>
+                    <span class="logo-text">Agentless<br>Scanner</span>
+                </div>
+            </div>
+            <nav class="sidebar-nav">
+                <ul id="nav-list">
+                    <li><a href="#" class="nav-item active" data-target="overview-section">
+                        <span class="icon">📊</span> Overview
+                    </a></li>
+                    <li><a href="#" class="nav-item" data-target="phase2-section">
+                        <span class="icon">📡</span> Phase 2 Scan
+                    </a></li>
+                    <li><a href="#" class="nav-item" data-target="phase3-section">
+                        <span class="icon">🔐</span> Phase 3 Scan
+                    </a></li>
+                    <li><a href="#" class="nav-item" data-target="history-section">
+                        <span class="icon">📂</span> Scan History
+                    </a></li>
+                    <li><a href="#" class="nav-item" data-target="reports-section">
+                        <span class="icon">📈</span> Reports (WIP)
+                    </a></li>
+                </ul>
+            </nav>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Top Header -->
+            <header class="top-header">
+                <div class="header-status">
+                    <span class="status-indicator online"></span>
+                    <span>System Online</span>
+                </div>
+                <div class="user-profile">
+                    <span class="user-icon">👤</span> Admin
+                </div>
+            </header>
+
+            <!-- Notifications Banner Area -->
+            <div id="notification-container"></div>
+
+            <!-- Dashboard Sections -->
+            <div class="content-sections">
+                
+                <!-- Overview Section -->
+                <section id="overview-section" class="section active">
+                    <header class="section-header">
+                        <h2>Dashboard Overview</h2>
+                        <span class="last-updated">Last Scan: <span id="last-scan-time">Loading...</span></span>
+                    </header>
+                    
+                    <div class="metrics-grid">
+                        <div class="metric-card">
+                            <div class="metric-title">Total Hosts Scanned</div>
+                            <div class="metric-value" id="metric-hosts">0</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-title">Open Ports</div>
+                            <div class="metric-value" id="metric-ports">0</div>
+                        </div>
+                        <div class="metric-card alert">
+                            <div class="metric-title">High-Risk Services</div>
+                            <div class="metric-value text-danger" id="metric-services">0</div>
+                        </div>
+                        <div class="metric-card warning">
+                            <div class="metric-title">Missing Hotfixes</div>
+                            <div class="metric-value text-warning" id="metric-hotfixes">0</div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-panels">
+                        <div class="panel">
+                            <h3>Vulnerability Distribution Placeholder</h3>
+                            <div class="bar-chart" id="vuln-chart">
+                                <!-- Generated Pure JS bars go here -->
+                            </div>
+                        </div>
+                        <div class="panel">
+                            <h3>Recent Hosts Activity</h3>
+                            <div class="table-container">
+                                <table class="data-table" id="overview-hosts-table">
+                                    <thead>
+                                        <tr>
+                                            <th>IP Address</th>
+                                            <th>Hostname</th>
+                                            <th>Risk Level</th>
+                                            <th>Last Seen</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <!-- Dynamic content -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Phase 2 Scan Section -->
+                <section id="phase2-section" class="section">
+                    <header class="section-header">
+                        <h2>Phase 2: Network Exposure Scan</h2>
+                        <p class="subtitle">Discover active hosts, open TCP ports, and running services.</p>
+                    </header>
+                    
+                    <div class="panel scan-form-panel">
+                        <form id="form-phase2">
+                            <div class="form-group">
+                                <label for="p2-target">Target IP / Subnet</label>
+                                <input type="text" id="p2-target" placeholder="e.g., 192.168.1.0/24 or 10.0.0.50" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="p2-type">Scan Type</label>
+                                <select id="p2-type">
+                                    <option value="stealth">Stealth SYN Scan (-sS)</option>
+                                    <option value="connect">TCP Connect Scan (-sT)</option>
+                                </select>
+                            </div>
+                            <div class="form-actions">
+                                <button type="submit" class="btn btn-primary" id="btn-p2-scan">
+                                    <span class="btn-text">Start Exposure Scan</span>
+                                    <div class="spinner hidden"></div>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div class="panel results-panel hidden" id="p2-results-panel">
+                        <h3>Scan Results</h3>
+                        <div class="table-container">
+                            <table class="data-table" id="p2-results-table">
+                                <thead>
+                                    <tr>
+                                        <th>IP</th>
+                                        <th>Hostname</th>
+                                        <th>Status</th>
+                                        <th>Open Ports</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Phase 3 Scan Section -->
+                <section id="phase3-section" class="section">
+                    <header class="section-header">
+                        <h2>Phase 3: Authenticated OS Inspection</h2>
+                        <p class="subtitle">Deep system profiling and security configuration checks.</p>
+                    </header>
+                    
+                    <div class="panel scan-form-panel">
+                        <form id="form-phase3">
+                            <div class="form-group">
+                                <label for="p3-target">Target Host</label>
+                                <input type="text" id="p3-target" placeholder="e.g., 192.168.1.50" required>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="p3-user">Username</label>
+                                    <input type="text" id="p3-user" placeholder="Administrator" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="p3-pass">Password</label>
+                                    <input type="password" id="p3-pass" placeholder="Password" required>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="p3-domain">Domain (Optional)</label>
+                                <input type="text" id="p3-domain" placeholder="WORKGROUP">
+                            </div>
+                            <div class="form-actions">
+                                <button type="submit" class="btn btn-primary" id="btn-p3-scan">
+                                    <span class="btn-text">Start Authenticated Inspection</span>
+                                    <div class="spinner hidden"></div>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div class="panel results-panel hidden" id="p3-results-panel">
+                        <h3>Inspection Categories</h3>
+                        <div class="accordion-container" id="p3-categories">
+                            <!-- Collapsible categories will be dynamically rendered here -->
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Scan History Section -->
+                <section id="history-section" class="section">
+                    <header class="section-header">
+                        <h2>Scan History</h2>
+                        <button class="btn btn-secondary btn-sm" id="btn-refresh-history">↻ Refresh</button>
+                    </header>
+
+                    <div class="panel">
+                        <div class="table-container">
+                            <table class="data-table hoverable" id="history-table">
+                                <thead>
+                                    <tr>
+                                        <th>Scan ID</th>
+                                        <th>Host / Target</th>
+                                        <th>Phase</th>
+                                        <th>Timestamp</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Dynamic content -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+                
+                <section id="reports-section" class="section">
+                    <header class="section-header">
+                        <h2>Reports & Analytics</h2>
+                    </header>
+                    <div class="panel center-content placeholder-panel">
+                        <p>Detailed reports and PDF generation coming soon.</p>
+                    </div>
+                </section>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal for Detailed Scan View -->
+    <div id="details-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-title">Scan Details</h3>
+                <button class="btn-close" id="modal-close">&times;</button>
+            </div>
+            <div class="modal-body" id="modal-body">
+                <!-- Dynamic content -->
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="modal-close-btn">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/api.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>
