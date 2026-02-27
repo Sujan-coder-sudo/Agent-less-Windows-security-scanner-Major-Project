@@ -1,155 +1,484 @@
 /**
  * api.js
- * Handles all API networking. 
- * Mock implementation to fulfill the frontend-only requirement while showing backend structure.
+ * Production-grade API layer for Agentless Scanner Dashboard.
+ * Handles all backend communication with proper error handling.
  */
 
-const API_BASE = '/api';
+const API_BASE = 'http://localhost:5000/api';
 
-// Utilities to fake delays for nice UX flows
-const delay = ms => new Promise(res => setTimeout(res, ms));
+// Track scan state to prevent duplicate triggers
+const scanState = {
+    phase2Running: false,
+    phase3Running: false,
+    authenticated: false
+};
+
+/**
+ * Handle API response and errors consistently
+ */
+async function handleResponse(response) {
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        // Check for auth required
+        if (response.status === 401) {
+            scanState.authenticated = false;
+        }
+        throw new Error(errorData.message || `HTTP Error: ${response.status}`);
+    }
+    return response.json();
+}
+
+/**
+ * Show loading state on button
+ */
+function setButtonLoading(button, loading) {
+    if (!button) return;
+    const spinner = button.querySelector('.spinner');
+    const btnText = button.querySelector('.btn-text');
+
+    if (loading) {
+        button.disabled = true;
+        if (spinner) spinner.classList.remove('hidden');
+        if (btnText) btnText.textContent = 'Scanning...';
+    } else {
+        button.disabled = false;
+        if (spinner) spinner.classList.add('hidden');
+        if (btnText) btnText.textContent = btnText.dataset.originalText || 'Start Scan';
+    }
+}
 
 const Api = {
     /**
+     * Check authentication status
+     */
+    async checkAuthStatus() {
+        try {
+            console.log('[API] Checking auth status...');
+            const response = await fetch(`${API_BASE}/auth/status`, {
+                method: 'GET',
+                credentials: 'include'
+            });
+            console.log('[API] Auth status response:', response.status);
+            const data = await handleResponse(response);
+            console.log('[API] Auth status data:', data);
+            scanState.authenticated = data.authenticated === true;
+            return scanState.authenticated;
+        } catch (error) {
+            console.error('[API] Auth check failed:', error);
+            scanState.authenticated = false;
+            return false;
+        }
+    },
+
+    /**
+     * Verify authentication using Windows Hello
+     */
+    async verifyAuth() {
+        try {
+            console.log('[API] Verifying auth (Windows Hello)...');
+            const response = await fetch(`${API_BASE}/auth/verify`, {
+                method: 'POST',
+                credentials: 'include'
+            });
+            console.log('[API] Auth verify response:', response.status);
+            const data = await response.json().catch(() => ({}));
+            console.log('[API] Auth verify data:', data);
+
+            // Backend returns { status, authenticated, data, message }
+            scanState.authenticated = data.authenticated === true;
+
+            if (response.status === 401) {
+                throw new Error(data.message || 'Authentication denied or cancelled');
+            }
+            if (!response.ok) {
+                throw new Error(data.message || `HTTP Error: ${response.status}`);
+            }
+            return data;
+        } catch (error) {
+            console.error('[API] Auth verification failed:', error);
+            scanState.authenticated = false;
+            throw error;
+        }
+    },
+
+    /**
+     * Logout - clear authentication
+     */
+    async logout() {
+        try {
+            const response = await fetch(`${API_BASE}/auth/logout`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include'
+            });
+            scanState.authenticated = false;
+            return handleResponse(response);
+        } catch (error) {
+            console.error('Logout failed:', error);
+            throw error;
+        }
+    },
+
+    /**
+     * Check if user is authenticated
+     */
+    isAuthenticated() {
+        return scanState.authenticated;
+    },
+
+    /**
+     * Health check endpoint
+     */
+    async healthCheck() {
+        try {
+            const response = await fetch(`${API_BASE}/health`, {
+                credentials: 'include'
+            });
+            return handleResponse(response);
+        } catch (error) {
+            console.error('Health check failed:', error);
+            throw new Error('Backend API is not available. Please ensure the server is running.');
+        }
+    },
+
+    /**
      * Fetch Dashboard Overview
-     * Returns: high level metrics
      */
     async getOverview() {
-        await delay(500);
-        return {
-            totalHosts: 42,
-            openPorts: 312,
-            highRiskServices: 5,
-            missingHotfixes: 18,
-            lastScan: new Date().toISOString(),
-            // Mock chart data for vuln distribution
-            vulnData: [
-                { label: 'Critical', value: 2, color: 'var(--accent-red)' },
-                { label: 'High', value: 8, color: 'var(--accent-red)' },
-                { label: 'Med', value: 15, color: 'var(--accent-yellow)' },
-                { label: 'Low', value: 24, color: 'var(--accent-cyan)' },
-                { label: 'Info', value: 45, color: 'var(--text-muted)' }
-            ],
-            recentHosts: [
-                { ip: '192.168.1.10', hostname: 'DC-01', risk: 'High', lastSeen: Date.now() - 3600000 },
-                { ip: '192.168.1.50', hostname: 'WIN10-DEV', risk: 'Medium', lastSeen: Date.now() - 7200000 },
-                { ip: '192.168.1.105', hostname: 'SRV-FILE', risk: 'Low', lastSeen: Date.now() - 86400000 },
-            ]
-        };
+        try {
+            const response = await fetch(`${API_BASE}/overview`, {
+                credentials: 'include'
+            });
+            const data = await handleResponse(response);
+
+            if (data.status === 'success' && data.data) {
+                const overview = data.data;
+                return {
+                    totalHosts: overview.totalHosts || 0,
+                    openPorts: overview.openPorts || 0,
+                    highRiskServices: overview.highRiskServices || 0,
+                    missingHotfixes: overview.missingHotfixes || 0,
+                    lastScan: overview.lastScan,
+                    vulnData: overview.vulnData || [],
+                    recentHosts: overview.recentHosts || []
+                };
+            }
+            throw new Error(data.message || 'Failed to load overview');
+        } catch (error) {
+            console.error('Failed to load overview:', error);
+            UI.notify(error.message, 'error');
+            // Return default data
+            return {
+                totalHosts: 0,
+                openPorts: 0,
+                highRiskServices: 0,
+                missingHotfixes: 0,
+                lastScan: null,
+                vulnData: [],
+                recentHosts: []
+            };
+        }
     },
 
     /**
-     * POST /api/phase2/run
-     * Start Phase 2 Network Exposure Scan
+     * Start Phase 2 Network Exposure Scan (requires auth)
      */
     async startPhase2Scan(target, scanType) {
-        console.log(`Sending Phase 2 Scan request: Target=${target}, Type=${scanType}`);
-        await delay(800);
-        
-        // Simulating API success
-        return {
-            jobId: `p2_${Date.now()}`,
-            status: 'running',
-            message: 'Exposure scan initiated successfully'
-        };
-    },
-
-    /**
-     * GET /api/phase2/status?jobId={id}
-     * Poll Phase 2 results
-     */
-    async pollPhase2Status(jobId) {
-        await delay(2000); // Simulate processing time
-        // Simulate returning result
-        return {
-            jobId,
-            status: 'completed',
-            results: [
-                { ip: '10.0.0.50', hostname: 'LAB-PC-1', status: 'Up', openPorts: 12 },
-                { ip: '10.0.0.51', hostname: 'LAB-PC-2', status: 'Up', openPorts: 3 },
-                { ip: '10.0.0.254', hostname: 'GATEWAY', status: 'Up', openPorts: 1 }
-            ]
-        };
-    },
-
-    /**
-     * POST /api/phase3/run
-     * Start Phase 3 Authenticated Inspection
-     */
-    async startPhase3Scan(target, user, pass, domain) {
-        console.log(`Sending Phase 3 Auth request. Target=${target}, User=${user}, Domain=${domain}`);
-        await delay(1000);
-
-        if (pass === 'wrong') {
-            throw new Error("Authentication Failed. LogonUserW rejected credentials.");
+        if (scanState.phase2Running) {
+            throw new Error('Phase 2 scan is already running. Please wait for it to complete.');
         }
 
-        return {
-            jobId: `p3_${Date.now()}`,
-            status: 'running',
-            message: 'Authenticated inspection initiated successfully'
-        };
-    },
+        // Check authentication first
+        if (!scanState.authenticated) {
+            throw new Error('Authentication required. Please verify authentication before running scans.');
+        }
 
-    /**
-     * GET /api/phase3/status?jobId={id}
-     * Poll Phase 3 results
-     */
-    async pollPhase3Status(jobId) {
-        await delay(3000); // Simulate slower WMI interrogation
+        // Validate IP address format
+        const ipRegex = /^(\d{1,3}\.){3}\d{1,3}(\/(\d|[12]\d|3[01]))?$/;
+        if (!ipRegex.test(target)) {
+            throw new Error('Invalid IP address or CIDR range format.');
+        }
 
-        // 13 categories mock
-        return {
-            jobId,
-            status: 'completed',
-            categories: {
-                "OS Profiling": { os: "Windows 10 Pro", build: "19045", arch: "x64" },
-                "Hotfix Audit": ["KB5031356", "KB5029244 missing"],
-                "Software Inventory": ["Google Chrome 118", "Python 3.10", "Wireshark"],
-                "Service Status": { "WinRM": "Running", "Spooler": "Stopped" },
-                "EDR / AV Health": { "Windows Defender": "Active", "Signatures": "Up to date" },
-                "Audit Policy": { "Logon": "Success/Failure", "Object Access": "No Auditing" },
-                "Firewall Rules": ["Rule 1: Allow TCP 5985", "Rule 2: Block ICMP"],
-                "Neighbor Discovery": ["10.0.0.1 (Gateway)", "10.0.0.5 (DC)"],
-                "Interface Statistics": { "Ethernet0": { "Rx": "1.2GB", "Tx": "850MB" } },
-                "Infrastructure Link": "Domain Joined: LAB.LOCAL",
-                "Persistence Mechanisms": ["Run Keys: OneDrive", "Scheduled Task: Updater"],
-                "User / Group Audit": ["Administrators: Admin, IT-Support", "Guests: Disabled"],
-                "Active Connections": ["[TCP] 10.0.0.50:5985 -> 10.0.0.10:49211 (ESTABLISHED)"]
+        scanState.phase2Running = true;
+
+        try {
+            const response = await fetch(`${API_BASE}/phase2/run`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                credentials: 'include',
+                body: JSON.stringify({ target, scanType })
+            });
+
+            const data = await handleResponse(response);
+
+            if (data.status === 'success') {
+                return {
+                    status: 'completed',
+                    data: data.data,
+                    message: data.message
+                };
+            } else {
+                throw new Error(data.message || 'Scan failed');
             }
-        };
+        } catch (error) {
+            console.error('Phase 2 scan failed:', error);
+            throw error;
+        } finally {
+            scanState.phase2Running = false;
+        }
     },
 
     /**
-     * GET /api/scans
-     * Fetch scan history
+     * Start Phase 3 System Vulnerability Scan (requires auth)
+     */
+    async startPhase3Scan() {
+        if (scanState.phase3Running) {
+            throw new Error('Phase 3 scan is already running. Please wait for it to complete.');
+        }
+
+        // Check authentication first
+        if (!scanState.authenticated) {
+            throw new Error('Authentication required. Please verify authentication before running scans.');
+        }
+
+        scanState.phase3Running = true;
+
+        try {
+            const response = await fetch(`${API_BASE}/phase3/run`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                credentials: 'include',
+                body: JSON.stringify({})
+            });
+
+            const data = await handleResponse(response);
+
+            if (data.status === 'success') {
+                return {
+                    status: 'completed',
+                    data: data.data,
+                    message: data.message
+                };
+            } else {
+                throw new Error(data.message || 'Scan failed');
+            }
+        } catch (error) {
+            console.error('Phase 3 scan failed:', error);
+            throw error;
+        } finally {
+            scanState.phase3Running = false;
+        }
+    },
+
+    /**
+     * Get scan history
      */
     async getScanHistory() {
-        await delay(600);
-        return [
-            { id: 1042, target: '10.0.0.50', phase: 'Phase 3', timestamp: Date.now() - 100000, status: 'Success' },
-            { id: 1041, target: '10.0.0.0/24', phase: 'Phase 2', timestamp: Date.now() - 86400000, status: 'Success' },
-            { id: 1040, target: '192.168.1.10', phase: 'Phase 3', timestamp: Date.now() - 172800000, status: 'Failed (Auth)' },
-            { id: 1039, target: '10.0.0.51', phase: 'Phase 3', timestamp: Date.now() - 250000000, status: 'Success' },
-        ];
+        try {
+            const response = await fetch(`${API_BASE}/scans`, {
+                credentials: 'include'
+            });
+            const data = await handleResponse(response);
+
+            if (data.status === 'success' && Array.isArray(data.data)) {
+                return data.data.map(scan => ({
+                    id: scan.id,
+                    target: scan.target,
+                    phase: scan.phase,
+                    timestamp: scan.timestamp ? new Date(scan.timestamp).getTime() : Date.now(),
+                    status: scan.status || 'Unknown',
+                    dataSummary: scan.data_summary || null
+                }));
+            }
+            return [];
+        } catch (error) {
+            console.error('Failed to load scan history:', error);
+            return [];
+        }
     },
-    
+
     /**
-     * GET /api/scans/{id}
-     * Fetch details for a specific scan
+     * Clear scan history
      */
-    async getScanDetails(id) {
-        await delay(500);
-        return {
-            id,
-            rawJson: JSON.stringify({
-                _metadata: {
-                    version: "1.0",
-                    timestamp: new Date().toISOString(),
-                    scanner_ip: "10.0.0.100"
-                },
-                results: "Mocked database JSON representation"
-            }, null, 2)
-        };
+    async clearScanHistory() {
+        try {
+            const response = await fetch(`${API_BASE}/scans/clear`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include'
+            });
+            return handleResponse(response);
+        } catch (error) {
+            console.error('Failed to clear history:', error);
+            throw error;
+        }
+    },
+
+    /**
+     * Export scan to file
+     */
+    async exportScan(scanId, format) {
+        try {
+            const response = await fetch(`${API_BASE}/export/${format}/${scanId}`, {
+                credentials: 'include'
+            });
+            if (!response.ok) {
+                throw new Error(`Export failed: ${response.status}`);
+            }
+
+            // Get filename from Content-Disposition header or generate one
+            const contentDisposition = response.headers.get('content-disposition');
+            let filename = `scan_${scanId}.${format}`;
+            if (contentDisposition) {
+                const match = contentDisposition.match(/filename="(.+)"/);
+                if (match) filename = match[1];
+            }
+
+            // Download the file
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+
+            return { success: true, filename };
+        } catch (error) {
+            console.error('Export failed:', error);
+            throw error;
+        }
+    },
+
+    /**
+     * Export all scans
+     */
+    async exportAllScans(format) {
+        try {
+            const response = await fetch(`${API_BASE}/export/all/${format}`, {
+                credentials: 'include'
+            });
+            if (!response.ok) {
+                throw new Error(`Export failed: ${response.status}`);
+            }
+
+            const contentDisposition = response.headers.get('content-disposition');
+            let filename = `all_scans.${format}`;
+            if (contentDisposition) {
+                const match = contentDisposition.match(/filename="(.+)"/);
+                if (match) filename = match[1];
+            }
+
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+
+            return { success: true, filename };
+        } catch (error) {
+            console.error('Bulk export failed:', error);
+            throw error;
+        }
+    },
+
+    /**
+     * Check if Phase 2 scan is running
+     */
+    isPhase2Running() {
+        return scanState.phase2Running;
+    },
+
+    /**
+     * Check if Phase 3 scan is running
+     */
+    isPhase3Running() {
+        return scanState.phase3Running;
+    },
+
+    // ─────────────────────────────────────────────────────────
+    // NEW SPEC METHODS
+    // ─────────────────────────────────────────────────────────
+
+    /**
+     * GET /api/history/<scan_id>
+     * Returns full scan record for modal / detail view.
+     */
+    async getScanDetails(scanId) {
+        try {
+            const response = await fetch(`${API_BASE}/history/${scanId}`, {
+                credentials: 'include'
+            });
+            const data = await handleResponse(response);
+            if (data.status === 'success') return data.data;
+            return null;
+        } catch (error) {
+            console.error(`[API] getScanDetails(${scanId}) failed:`, error);
+            return null;
+        }
+    },
+
+    /**
+     * POST /api/scan/phase2  { target }
+     * Direct endpoint — auth is validated server-side.
+     */
+    async startPhase2Direct(target) {
+        if (scanState.phase2Running) {
+            throw new Error('Phase 2 scan is already running.');
+        }
+        scanState.phase2Running = true;
+        try {
+            const response = await fetch(`${API_BASE}/scan/phase2`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ target })
+            });
+            const data = await handleResponse(response);
+            if (data.status === 'success') return { status: 'completed', data: data.data };
+            throw new Error(data.message || 'Scan failed');
+        } catch (error) {
+            console.error('[API] startPhase2Direct failed:', error);
+            throw error;
+        } finally {
+            scanState.phase2Running = false;
+        }
+    },
+
+    /**
+     * POST /api/scan/phase3
+     * Direct endpoint — auth is validated server-side.
+     */
+    async startPhase3Direct() {
+        if (scanState.phase3Running) {
+            throw new Error('Phase 3 scan is already running.');
+        }
+        scanState.phase3Running = true;
+        try {
+            const response = await fetch(`${API_BASE}/scan/phase3`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({})
+            });
+            const data = await handleResponse(response);
+            if (data.status === 'success') return { status: 'completed', data: data.data };
+            throw new Error(data.message || 'Scan failed');
+        } catch (error) {
+            console.error('[API] startPhase3Direct failed:', error);
+            throw error;
+        } finally {
+            scanState.phase3Running = false;
+        }
     }
 };

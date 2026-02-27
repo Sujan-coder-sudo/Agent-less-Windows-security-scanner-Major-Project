@@ -139,18 +139,62 @@ const UI = {
         document.getElementById('details-modal').classList.add('hidden');
     },
 
-    // Format Relative Time
+    // Format Relative Time - with safety guards
     timeAgo(ts) {
-        const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
-        const daysDifference = Math.round((ts - Date.now()) / 86400000);
-        const hoursDifference = Math.round((ts - Date.now()) / 3600000);
+        // Guard against invalid values
+        if (ts === undefined || ts === null || ts === '' || isNaN(ts)) {
+            return 'N/A';
+        }
         
-        if (Math.abs(daysDifference) > 0) return rtf.format(daysDifference, 'day');
-        return rtf.format(hoursDifference, 'hour');
+        const timestamp = Number(ts);
+        
+        // Check if finite number
+        if (!Number.isFinite(timestamp)) {
+            return 'N/A';
+        }
+        
+        const now = Date.now();
+        const diffMs = timestamp - now;
+        
+        // Check if difference is valid
+        if (!Number.isFinite(diffMs)) {
+            return 'N/A';
+        }
+        
+        try {
+            const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+            const daysDifference = Math.round(diffMs / 86400000);
+            const hoursDifference = Math.round(diffMs / 3600000);
+            const minutesDifference = Math.round(diffMs / 60000);
+            
+            if (Math.abs(daysDifference) > 0) {
+                return rtf.format(daysDifference, 'day');
+            } else if (Math.abs(hoursDifference) > 0) {
+                return rtf.format(hoursDifference, 'hour');
+            } else {
+                return rtf.format(minutesDifference, 'minute');
+            }
+        } catch (e) {
+            console.error('RelativeTimeFormat error:', e);
+            return 'N/A';
+        }
     },
 
-    // Format Date
+    // Format Date - with safety guards
     formatDate(dateStr) {
-        return new Date(dateStr).toLocaleString();
+        if (!dateStr || dateStr === 'null' || dateStr === 'undefined') {
+            return 'N/A';
+        }
+        
+        try {
+            const date = new Date(dateStr);
+            if (isNaN(date.getTime())) {
+                return 'Invalid date';
+            }
+            return date.toLocaleString();
+        } catch (e) {
+            console.error('Date formatting error:', e);
+            return 'Invalid date';
+        }
     }
 };

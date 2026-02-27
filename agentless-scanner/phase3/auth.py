@@ -1,20 +1,25 @@
 import asyncio
 from winrt.windows.security.credentials.ui import UserConsentVerifier, UserConsentVerificationResult
 
-async def authenticate_user():
-    # Trigger Windows Hello (Face, Fingerprint, or PIN)
-    result = await UserConsentVerifier.request_verification_async(
-        "Authenticate to start the application"
-    )
 
-    if result == UserConsentVerificationResult.VERIFIED:
-        print("Access Granted!")
-    else:
-        print("Access Denied or Canceled.")
-        exit(1)
+async def verify_windows_hello(prompt: str) -> bool:
+    result = await UserConsentVerifier.request_verification_async(prompt)
+    return result == UserConsentVerificationResult.VERIFIED
+
+
+def verify_windows_hello_sync(prompt: str) -> bool:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(verify_windows_hello(prompt))
+
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(verify_windows_hello(prompt))
+    finally:
+        loop.close()
+
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(authenticate_user())
-    except Exception as e:
-        print(f"Error: {e}")
+    ok = verify_windows_hello_sync("Authenticate to start the vulnerability scan")
+    raise SystemExit(0 if ok else 1)

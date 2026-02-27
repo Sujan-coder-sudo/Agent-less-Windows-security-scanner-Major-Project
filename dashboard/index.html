@@ -142,53 +142,29 @@
                     </div>
 
                     <div class="panel results-panel hidden" id="p2-results-panel">
-                        <h3>Scan Results</h3>
-                        <div class="table-container">
-                            <table class="data-table" id="p2-results-table">
-                                <thead>
-                                    <tr>
-                                        <th>IP</th>
-                                        <th>Hostname</th>
-                                        <th>Status</th>
-                                        <th>Open Ports</th>
-                                    </tr>
-                                </thead>
-                                <tbody></tbody>
-                            </table>
-                        </div>
+                        <!-- Results will be dynamically rendered here -->
                     </div>
                 </section>
 
                 <!-- Phase 3 Scan Section -->
                 <section id="phase3-section" class="section">
                     <header class="section-header">
-                        <h2>Phase 3: Authenticated OS Inspection</h2>
-                        <p class="subtitle">Deep system profiling and security configuration checks.</p>
+                        <h2>Phase 3: System Vulnerability Scan</h2>
+                        <p class="subtitle">Agentless Windows system profiling and security configuration audit.</p>
                     </header>
                     
                     <div class="panel scan-form-panel">
                         <form id="form-phase3">
-                            <div class="form-group">
-                                <label for="p3-target">Target Host</label>
-                                <input type="text" id="p3-target" placeholder="e.g., 192.168.1.50" required>
-                            </div>
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label for="p3-user">Username</label>
-                                    <input type="text" id="p3-user" placeholder="Administrator" required>
-                                </div>
-                                <div class="form-group">
-                                    <label for="p3-pass">Password</label>
-                                    <input type="password" id="p3-pass" placeholder="Password" required>
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label for="p3-domain">Domain (Optional)</label>
-                                <input type="text" id="p3-domain" placeholder="WORKGROUP">
+                            <div class="form-info">
+                                <p class="info-text">
+                                    <span class="info-icon">ℹ️</span>
+                                    This scan performs agentless inspection of the local Windows system using PowerShell.
+                                    No credentials required - runs with current user privileges.
+                                </p>
                             </div>
                             <div class="form-actions">
                                 <button type="submit" class="btn btn-primary" id="btn-p3-scan">
-                                    <span class="btn-text">Start Authenticated Inspection</span>
+                                    <span class="btn-text">Start System Scan</span>
                                     <div class="spinner hidden"></div>
                                 </button>
                             </div>
@@ -196,9 +172,8 @@
                     </div>
 
                     <div class="panel results-panel hidden" id="p3-results-panel">
-                        <h3>Inspection Categories</h3>
-                        <div class="accordion-container" id="p3-categories">
-                            <!-- Collapsible categories will be dynamically rendered here -->
+                        <div id="p3-categories">
+                            <!-- Results will be dynamically rendered here -->
                         </div>
                     </div>
                 </section>
@@ -207,10 +182,21 @@
                 <section id="history-section" class="section">
                     <header class="section-header">
                         <h2>Scan History</h2>
-                        <button class="btn btn-secondary btn-sm" id="btn-refresh-history">↻ Refresh</button>
+                        <div class="header-actions">
+                            <button class="btn btn-secondary btn-sm" id="btn-refresh-history">↻ Refresh</button>
+                        </div>
                     </header>
 
                     <div class="panel">
+                        <div class="export-controls">
+                            <select id="export-format" class="form-control-inline">
+                                <option value="json">JSON</option>
+                                <option value="csv">CSV</option>
+                            </select>
+                            <button class="btn btn-primary btn-sm" id="btn-export-all">Export All</button>
+                            <button class="btn btn-danger btn-sm" id="btn-clear-history">Clear History</button>
+                        </div>
+                        
                         <div class="table-container">
                             <table class="data-table hoverable" id="history-table">
                                 <thead>
@@ -220,6 +206,7 @@
                                         <th>Phase</th>
                                         <th>Timestamp</th>
                                         <th>Status</th>
+                                        <th>Export</th>
                                     </tr>
                                 </thead>
                                 <tbody>
