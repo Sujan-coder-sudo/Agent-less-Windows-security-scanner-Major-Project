@@ -26,10 +26,8 @@ def search_cve(primary_keyword, fallback_keyword=None):
         return cves[:3]
 
     try:
-        # 🔹 Primary search
         results = fetch(primary_keyword)
 
-        # 🔹 Fallback if empty
         if not results and fallback_keyword:
             results = fetch(fallback_keyword)
 
