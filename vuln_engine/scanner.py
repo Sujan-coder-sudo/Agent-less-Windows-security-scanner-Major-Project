@@ -11,5 +11,4 @@ def run_nmap(target):
     ]
 
     result = subprocess.run(command, capture_output=True, text=True)
-
     return result.stdout
