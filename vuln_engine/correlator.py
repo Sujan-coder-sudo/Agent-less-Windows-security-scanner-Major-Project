@@ -7,7 +7,6 @@ def correlate_services(services):
     for service in services:
         port = service["port"]
 
-        # Avoid duplicate processing
         if port in seen_ports:
             continue
 
