@@ -31,6 +31,65 @@ def apply_rules(service_data):
             "cves": cves if cves else ["Manual verification required"]
         })
 
+    # 🔴 RDP
+    elif port == 3389:
+        if state == "open":
+            risk = "High"
+            note = "RDP exposed - remote access possible"
+        else:
+            risk = "Low"
+            note = "RDP filtered by firewall"
+
+        cves = search_cve(
+            primary_keyword="RDP remote code execution",
+            fallback_keyword="BlueKeep RDP vulnerability"
+        )
+
+        findings.append({
+            "port": port,
+            "state": state,
+            "issue": "RDP service detected",
+            "risk": risk,
+            "note": note,
+            "cves": cves if cves else ["Check RDP configuration manually"]
+        })
+
+    # 🔴 RPC
+    elif port == 135:
+        if state == "open":
+            risk = "Medium"
+            note = "RPC exposed - used in lateral movement"
+        else:
+            risk = "Low"
+            note = "RPC filtered"
+
+        findings.append({
+            "port": port,
+            "state": state,
+            "issue": "RPC service detected",
+            "risk": risk,
+            "note": note,
+            "cves": ["Potential lateral movement vector"]
+        })
+
+    # 🔴 NetBIOS
+    elif port == 139:
+        if state == "open":
+            risk = "Medium"
+            note = "NetBIOS exposed - information leakage risk"
+        else:
+            risk = "Low"
+            note = "NetBIOS filtered"
+
+        findings.append({
+            "port": port,
+            "state": state,
+            "issue": "NetBIOS service detected",
+            "risk": risk,
+            "note": note,
+            "cves": ["Possible enumeration risk"]
+        })
+
     # 🔴 WinRM
     elif port == 5985:
         if state == "open":
