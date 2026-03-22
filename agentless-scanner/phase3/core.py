@@ -6,10 +6,13 @@
 # - Exporting results to JSON and PDF
 
 import os
+import sys
 import json
 import subprocess
 import platform
 import requests
+import ctypes
+import re
 from typing import List, Dict, Any
 
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
@@ -36,11 +39,61 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 # UTILITY FUNCTIONS
 # -----------------------------
 
+COMMON_PORT_MAP = {
+    "3389": "RDP",
+    "445": "SMB",
+    "139": "NetBIOS",
+    "135": "RPC",
+    "80": "HTTP",
+    "443": "HTTPS",
+    "21": "FTP",
+    "22": "SSH"
+}
+
+def is_admin() -> bool:
+    """Checks if the script is running with administrator privileges."""
+    try:
+        return ctypes.windll.shell32.IsUserAnAdmin() != 0
+    except Exception:
+        return False
+
+def relaunch_as_admin():
+    """Relaunches the script with administrator privileges and exits."""
+    executable = sys.executable
+    args = " ".join([f'"{arg}"' for arg in sys.argv])
+    ctypes.windll.shell32.ShellExecuteW(None, "runas", executable, args, None, 1)
+    sys.exit(0)
+
+def extract_kbs(output: str) -> List[str]:
+    """Extract KB numbers like KB5021234 from command output."""
+    return list(set(re.findall(r"(KB\d+)", output, re.IGNORECASE)))
+
+def parse_software(output: str) -> List[str]:
+    """Extract top installed software names from command output."""
+    lines = output.splitlines()
+    softwares = []
+    for line in lines:
+        parts = line.split('  ')
+        if parts and parts[0].strip() and not parts[0].strip().startswith('-') and parts[0].strip().lower() != 'name':
+            if len(parts[0].strip()) > 2:
+                softwares.append(parts[0].strip())
+    return softwares
+
+def extract_services(output: str) -> List[str]:
+    """Extract running service names from command output."""
+    lines = output.splitlines()
+    services = []
+    for line in lines:
+        parts = line.split()
+        if len(parts) >= 2 and parts[0] == 'Running':
+            services.append(parts[1])
+    return services
+
 def run_powershell(command: str) -> str:
     """Runs PowerShell command safely (inspection-only)."""
     try:
         completed = subprocess.run(
-            ["powershell", "-NoProfile", "-Command", command],
+            ["powershell", "-ExecutionPolicy", "Bypass", "-NoProfile", "-Command", command],
             capture_output=True,
             text=True,
             timeout=60
@@ -49,6 +102,18 @@ def run_powershell(command: str) -> str:
     except Exception as e:
         return f"ERROR: {str(e)}"
 
+def calculate_risk(nvd):
+    """Calculates risk dynamically from nvd output severities."""
+    if not isinstance(nvd, list) or not nvd:
+        return "LOW"
+    
+    if any(c.get("severity") == "CRITICAL" for c in nvd if isinstance(c, dict)):
+        return "CRITICAL"
+        
+    if any(c.get("severity") == "HIGH" for c in nvd if isinstance(c, dict)):
+        return "HIGH"
+        
+    return "MEDIUM"
 
 def query_nvd(keyword: str, limit: int = 5) -> List[Dict[str, Any]]:
     if not NVD_API_KEY:
@@ -65,12 +130,21 @@ def query_nvd(keyword: str, limit: int = 5) -> List[Dict[str, Any]]:
         data = r.json()
         cves = []
         for item in data.get("vulnerabilities", []):
-            cve = item.get("cve", {})
-            cves.append({
-                "cve_id": cve.get("id"),
-                "description": cve.get("descriptions", [{}])[0].get("value"),
-                "severity": cve.get("metrics", {}).get("cvssMetricV31", [{}])[0]
-            })
+            try:
+                cve = item.get("cve", {})
+                cvss_data = cve.get("metrics", {}).get("cvssMetricV31", [{}])[0].get("cvssData", {})
+                severity = cvss_data.get("baseSeverity", "").upper()
+                
+                if severity in ["HIGH", "CRITICAL"]:
+                    cve_id = cve.get("id", "Unknown")
+                    desc = cve.get("descriptions", [{}])[0].get("value", "No description")
+                    cves.append({
+                        "cve_id": cve_id,
+                        "description": desc,
+                        "severity": severity
+                    })
+            except Exception:
+                continue
         return cves
     except Exception as e:
         return [{"error": str(e)}]
@@ -79,169 +153,367 @@ def query_nvd(keyword: str, limit: int = 5) -> List[Dict[str, Any]]:
 # SCAN MODULES
 # -----------------------------
 
-def scan_hotfix_audit():
-    cmd = 'Get-HotFix; (New-Object -ComObject Microsoft.Update.Session).CreateUpdateSearcher().Search("IsInstalled=0").Updates'
-    return _wrap_result(
-        "Hotfix Audit",
-        cmd,
-        run_powershell(cmd),
-        "Missing KBs correlate with Patch Tuesday RCE/LPE vulnerabilities.",
-        query_nvd("Windows Patch Tuesday Remote Code Execution")
-    )
-
-
-def scan_software_inventory():
-    cmd = 'Get-Package; Get-WmiObject -Class Win32_Product; Get-Service | Where-Object {$_.Name -like "Sysmon"}'
-    return _wrap_result(
-        "Software Inventory",
-        cmd,
-        run_powershell(cmd),
-        "Outdated or unmanaged software expands exploit surface.",
-        query_nvd("Windows third-party software vulnerability")
-    )
-
-
-def scan_service_status():
-    cmd = 'Get-Service | Where-Object {$_.Status -eq "Running"}; Get-CimInstance -Namespace root/subscription -ClassName __EventConsumer'
-    return _wrap_result(
-        "Service Status",
-        cmd,
-        run_powershell(cmd),
-        "Running services and WMI consumers are common persistence vectors.",
-        query_nvd("Windows service privilege escalation")
-    )
-
-
-def scan_edr_health():
-    cmd = 'Get-MpComputerStatus; Confirm-SecureBootUEFI'
-    return _wrap_result(
-        "EDR / AV Health",
-        cmd,
-        run_powershell(cmd),
-        "Weak EDR or Secure Boot off enables BYOVD and bootkits.",
-        query_nvd("Windows Defender bypass BYOVD")
-    )
-
-
-def scan_audit_policy():
-    cmd = 'auditpol /get /category:*; Get-EventLog -List'
-    return _wrap_result(
-        "Audit Policy",
-        cmd,
-        run_powershell(cmd),
-        "Low logging creates detection gaps.",
-        "No direct CVE – detection gap risk"
-    )
-
-
-def scan_firewall():
-    cmd = 'Get-NetFirewallRule -Enabled True | Select DisplayName,Direction,Action'
-    return _wrap_result(
-        "Firewall Rules",
-        cmd,
-        run_powershell(cmd),
-        "Inbound allow rules increase attack surface.",
-        query_nvd("Windows Firewall bypass")
-    )
-
-
-def scan_neighbor_discovery():
-    cmd = 'Get-NetNeighbor; Get-NetRoute'
-    return _wrap_result(
-        "Neighbor Discovery",
-        cmd,
-        run_powershell(cmd),
-        "ARP/IPv6 exposure enables MitM attacks.",
-        query_nvd("IPv6 Neighbor Discovery vulnerability")
-    )
-
-
-def scan_interface_stats():
-    cmd = 'Get-NetAdapterStatistics; Get-DnsClientServerAddress'
-    return _wrap_result(
-        "Interface Statistics",
-        cmd,
-        run_powershell(cmd),
-        "DNS hijacking can redirect traffic to malicious resolvers.",
-        query_nvd("Windows DNS Client vulnerability")
-    )
-
-
-def scan_infrastructure_link():
-    cmd = 'Get-ADComputer -Identity $env:COMPUTERNAME -Properties *; (Get-CimInstance Win32_BIOS).Version'
-    return _wrap_result(
-        "Infrastructure Link",
-        cmd,
-        run_powershell(cmd),
-        "Outdated BIOS/UEFI firmware enables bootkits.",
-        query_nvd("UEFI firmware vulnerability")
-    )
-
-
-def scan_persistence():
-    cmd = 'Get-ScheduledTask; Get-ItemProperty HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'
-    return _wrap_result(
-        "Persistence Mechanisms",
-        cmd,
-        run_powershell(cmd),
-        "Startup tasks and run keys allow malware persistence.",
-        query_nvd("Windows Task Scheduler privilege escalation")
-    )
-
-
 def scan_os_profiling():
     cmd = 'systeminfo'
+    output = run_powershell(cmd)
+    
+    nvd_query = "Windows vulnerability"
+    extracted_name = None
+    extracted_version = None
+    
+    try:
+        os_name_match = re.search(r"OS Name:\s+(.+)", output)
+        os_version_match = re.search(r"OS Version:\s+(.+)", output)
+        if os_name_match and os_version_match:
+            extracted_name = os_name_match.group(1).replace("Microsoft", "").strip()
+            extracted_version = os_version_match.group(1).split(" ")[0]
+            nvd_query = f"{extracted_name} {extracted_version}"
+        else:
+            ver = platform.version()
+            if ver:
+                nvd_query = f"Windows {ver}"
+                extracted_version = ver
+    except Exception:
+        pass
+
+    extra = {
+        "os_name": extracted_name,
+        "os_version": extracted_version
+    }
+
     return _wrap_result(
         "OS Profiling",
         cmd,
-        run_powershell(cmd),
+        output,
         "OS version/build determines kernel exploit exposure.",
-        query_nvd(platform.platform())
+        query_nvd(nvd_query),
+        extra
     )
 
+def scan_hotfix_audit():
+    cmd = 'Get-HotFix; (New-Object -ComObject Microsoft.Update.Session).CreateUpdateSearcher().Search("IsInstalled=0").Updates'
+    output = run_powershell(cmd)
+    
+    kbs = extract_kbs(output)
+    query_str = "Windows Patch Tuesday Remote Code Execution"
+    if kbs:
+        query_str = " ".join(kbs[:3])
+        
+    extra = {
+        "missing_kbs": kbs[:10]
+    }
+        
+    return _wrap_result(
+        "Hotfix Audit",
+        cmd,
+        output,
+        "Missing KBs correlate with Patch Tuesday RCE/LPE vulnerabilities.",
+        query_nvd(query_str),
+        extra
+    )
+
+def scan_software_inventory():
+    cmd = 'Get-Package; Get-WmiObject -Class Win32_Product; Get-Service | Where-Object {$_.Name -like "Sysmon"}'
+    output = run_powershell(cmd)
+    
+    softwares = parse_software(output)
+    query_str = "Windows third-party software vulnerability"
+    if softwares and len(softwares) > 0:
+        query_str = softwares[0]
+        
+    extra = {
+        "top_software": softwares[:5]
+    }
+        
+    return _wrap_result(
+        "Software Inventory",
+        cmd,
+        output,
+        "Outdated or unmanaged software expands exploit surface.",
+        query_nvd(query_str),
+        extra
+    )
+
+def scan_service_status():
+    cmd = 'Get-Service | Where-Object {$_.Status -eq "Running"}; Get-CimInstance -Namespace root/subscription -ClassName __EventConsumer'
+    output = run_powershell(cmd)
+    
+    services = extract_services(output)
+    query_str = "Windows service privilege escalation"
+    if services:
+        query_str = f"{services[0]} privilege escalation"
+        
+    extra = {
+        "running_services": services[:10]
+    }
+        
+    return _wrap_result(
+        "Service Status",
+        cmd,
+        output,
+        "Running services and WMI consumers are common persistence vectors.",
+        query_nvd(query_str),
+        extra
+    )
+
+def scan_edr_health():
+    cmd = 'Get-MpComputerStatus; Confirm-SecureBootUEFI'
+    output = run_powershell(cmd)
+    
+    query_str = "Windows Defender evasion"
+    if "False" in output or "Provider load failure" in output or "Cmdlet not supported" in output:
+        query_str = "Windows Defender bypass BYOVD"
+        
+    extra = {
+        "edr_disabled_or_weak": ("False" in output) or ("Provider load failure" in output)
+    }
+        
+    return _wrap_result(
+        "EDR / AV Health",
+        cmd,
+        output,
+        "Weak EDR or Secure Boot off enables BYOVD and bootkits.",
+        query_nvd(query_str),
+        extra
+    )
+
+def scan_audit_policy():
+    cmd = 'auditpol /get /category:*; Get-EventLog -List'
+    output = run_powershell(cmd)
+    
+    extra = {
+        "logging_status": "Checked"
+    }
+    
+    return _wrap_result(
+        "Audit Policy",
+        cmd,
+        output,
+        "Low logging creates detection gaps.",
+        "No direct CVE - maps to MITRE ATT&CK",
+        extra
+    )
+
+def scan_firewall():
+    fw_cmd = 'Get-NetFirewallPortFilter | Where-Object {$_.Protocol -eq "TCP"}'
+    listen_cmd = 'Get-NetTCPConnection -State Listen'
+    
+    fw_output = run_powershell(fw_cmd)
+    listen_output = run_powershell(listen_cmd)
+    
+    try:
+        fw_ports = set(re.findall(r"\b\d{2,5}\b", str(fw_output)))
+        listen_ports = set(re.findall(r"\b\d{2,5}\b", str(listen_output)))
+        exposed_ports = list(fw_ports.intersection(listen_ports))
+    except Exception:
+        exposed_ports = []
+        
+    port = None
+    service = None
+    
+    if exposed_ports:
+        port = str(exposed_ports[0])
+        service = COMMON_PORT_MAP.get(port, "Windows service")
+        query_str = f"{service} remote code execution"
+        nvd_result = query_nvd(query_str)
+    else:
+        nvd_result = "Windows firewall misconfiguration"
+        
+    cmd_str = f"{fw_cmd}; {listen_cmd}"
+    combined_output = f"FIREWALL:\n{str(fw_output)[:1000]}\n\nLISTEN:\n{str(listen_output)[:1000]}"
+    
+    extra = {
+        "exposed_ports": exposed_ports,
+        "primary_port": port,
+        "service": service
+    }
+    
+    return _wrap_result(
+        "Firewall Rules",
+        cmd_str,
+        combined_output,
+        "Open ports increase attack surface.",
+        nvd_result,
+        extra
+    )
+
+def scan_neighbor_discovery():
+    cmd = 'Get-NetNeighbor; Get-NetRoute'
+    output = run_powershell(cmd)
+    
+    extra = {
+        "network_exposure": "Checked"
+    }
+    
+    return _wrap_result(
+        "Neighbor Discovery",
+        cmd,
+        output,
+        "ARP/IPv6 exposure enables MitM attacks.",
+        query_nvd("IPv6 Neighbor Discovery vulnerability"),
+        extra
+    )
+
+def scan_interface_stats():
+    cmd = 'Get-NetAdapterStatistics; Get-DnsClientServerAddress'
+    output = run_powershell(cmd)
+    
+    query_str = "Windows DNS Client vulnerability"
+    if "ServerAddresses" in output or re.search(r"\d+\.\d+\.\d+\.\d+", output):
+        query_str = "DNS spoofing Windows vulnerability"
+        
+    extra = {
+        "interface_stats": "Checked"
+    }
+        
+    return _wrap_result(
+        "Interface Statistics",
+        cmd,
+        output,
+        "DNS hijacking can redirect traffic to malicious resolvers.",
+        query_nvd(query_str),
+        extra
+    )
+
+def scan_infrastructure_link():
+    cmd = 'Get-ADComputer -Identity $env:COMPUTERNAME -Properties *; (Get-CimInstance Win32_BIOS).Version'
+    output = run_powershell(cmd)
+    
+    query_str = "UEFI firmware vulnerability"
+    bios_ver = None
+    try:
+        lines = [line.strip() for line in output.splitlines() if line.strip()]
+        if lines:
+            bios_ver = lines[-1][:30]
+            query_str = f"UEFI firmware vulnerability {bios_ver}"
+    except Exception:
+        pass
+        
+    extra = {
+        "bios_version": bios_ver
+    }
+        
+    return _wrap_result(
+        "Infrastructure Link",
+        cmd,
+        output,
+        "Outdated BIOS/UEFI firmware enables bootkits.",
+        query_nvd(query_str),
+        extra
+    )
+
+def scan_persistence():
+    cmd = 'Get-ScheduledTask; Get-ItemProperty HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'
+    output = run_powershell(cmd)
+    
+    extra = {
+        "persistence_mechanisms": "Checked"
+    }
+    
+    return _wrap_result(
+        "Persistence Mechanisms",
+        cmd,
+        output,
+        "Startup tasks and run keys allow malware persistence.",
+        "No direct CVE - maps to MITRE ATT&CK",
+        extra
+    )
 
 def scan_users():
     cmd = 'Get-LocalGroupMember -Group "Administrators"'
+    output = run_powershell(cmd)
+    
+    query_str = "Windows privilege escalation"
+    admin_count = 0
+    try:
+        lines = output.splitlines()
+        admin_count = sum(1 for line in lines if "User" in line or "Group" in line)
+        if admin_count > 1:
+            query_str = "Windows local privilege escalation"
+    except Exception:
+        pass
+        
+    extra = {
+        "admin_count": admin_count
+    }
+        
     return _wrap_result(
         "User / Group Audit",
         cmd,
-        run_powershell(cmd),
+        output,
         "Admin sprawl enables privilege escalation chaining.",
-        query_nvd("Windows Local Privilege Escalation")
+        query_nvd(query_str),
+        extra
     )
-
 
 def scan_connections():
     cmd = 'Get-NetTCPConnection -State Listen'
+    output = run_powershell(cmd)
+    
+    query_str = "Windows remote service RCE"
+    ports = []
+    try:
+        # Regex update specific to connections explicitly requested
+        ports = re.findall(r":(\d+)\s+Listen", output)
+        if ports:
+            query_str = f"Windows remote service RCE port {ports[0]}"
+    except Exception:
+        pass
+        
+    extra = {
+        "listening_ports": ports[:10]
+    }
+        
     return _wrap_result(
         "Active Connections",
         cmd,
-        run_powershell(cmd),
+        output,
         "Unexpected listeners may indicate backdoors.",
-        query_nvd("Windows remote service RCE")
+        query_nvd(query_str),
+        extra
     )
 
-
-def _wrap_result(category, cmd, output, logic, nvd):
+def _wrap_result(category, cmd, output, logic, nvd, extra=None):
     return {
         "category": category,
-        "command": cmd,
-        "command_output": output[:2000],
-        "summary": f"{category} inspection completed.",
-        "logic_reasoning": logic,
-        "nvd_correlation": nvd
+        "status": "success" if "ERROR" not in str(output) else "failed",
+        "type": "cve" if isinstance(nvd, list) else "misconfiguration",
+        "risk": calculate_risk(nvd),
+        "command": {
+            "executed": cmd,
+            "raw_output": output[:2000] if isinstance(output, str) else str(output)[:2000]
+        },
+        "findings": extra if extra else {},
+        "analysis": {
+            "summary": f"{category} inspection completed.",
+            "logic": logic
+        },
+        "nvd": nvd if isinstance(nvd, list) else []
     }
 
 # -----------------------------
 # EXPORT
 # -----------------------------
 
+def build_summary(report):
+    return {
+        "total_checks": len(report),
+        "critical": sum(1 for r in report if r.get("risk") == "CRITICAL"),
+        "high": sum(1 for r in report if r.get("risk") == "HIGH"),
+        "medium": sum(1 for r in report if r.get("risk") == "MEDIUM"),
+        "low": sum(1 for r in report if r.get("risk") == "LOW"),
+        "failed": sum(1 for r in report if r.get("status") == "failed")
+    }
+
 def export_json(report):
+    final_output = {
+        "summary": build_summary(report),
+        "results": report
+    }
     path = os.path.join(OUTPUT_DIR, "scan_report.json")
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(report, f, indent=2)
+        json.dump(final_output, f, indent=2)
     return path
-
 
 def export_pdf(report):
     path = os.path.join(OUTPUT_DIR, "scan_report.pdf")
@@ -253,11 +525,18 @@ def export_pdf(report):
     story.append(Spacer(1, 12))
 
     for item in report:
-        story.append(Paragraph(f"<b>Category:</b> {item['category']}", styles["Heading2"]))
-        story.append(Paragraph(f"<b>Command:</b> {item['command']}", styles["Normal"]))
-        story.append(Paragraph(f"<b>Summary:</b> {item['summary']}", styles["Normal"]))
-        story.append(Paragraph(f"<b>Logic:</b> {item['logic_reasoning']}", styles["Normal"]))
-        story.append(Paragraph(f"<b>NVD:</b> {str(item['nvd_correlation'])[:1000]}", styles["Normal"]))
+        story.append(Paragraph(f"<b>Category:</b> {item.get('category')}", styles["Heading2"]))
+        
+        # Access properties using the new nested output schema safely
+        cmd_text = item.get("command", {}).get("executed", "")
+        summary_text = item.get("analysis", {}).get("summary", "")
+        logic_text = item.get("analysis", {}).get("logic", "")
+        nvd_list = item.get("nvd", [])
+        
+        story.append(Paragraph(f"<b>Command:</b> {cmd_text}", styles["Normal"]))
+        story.append(Paragraph(f"<b>Summary:</b> {summary_text}", styles["Normal"]))
+        story.append(Paragraph(f"<b>Logic:</b> {logic_text}", styles["Normal"]))
+        story.append(Paragraph(f"<b>NVD:</b> {str(nvd_list)[:1000]}", styles["Normal"]))
         story.append(Spacer(1, 10))
 
     doc.build(story)
@@ -268,6 +547,10 @@ def export_pdf(report):
 # -----------------------------
 
 def main():
+    if not is_admin():
+        print("Not running as administrator. Relaunching...")
+        relaunch_as_admin()
+
     report = [
         scan_os_profiling(),
         scan_hotfix_audit(),
@@ -290,7 +573,6 @@ def main():
     print("Report generated")
     print(f"JSON: {json_path}")
     print(f"PDF: {pdf_path}")
-
 
 if __name__ == "__main__":
     main()
