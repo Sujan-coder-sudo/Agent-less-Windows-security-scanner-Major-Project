@@ -18,7 +18,6 @@ def search_cve(primary_keyword, fallback_keyword=None):
             for item in data["vulnerabilities"]:
                 cve_id = item["cve"]["id"]
 
-                # filter recent CVEs
                 year = int(cve_id.split("-")[1])
                 if year >= 2015:
                     cves.append(cve_id)
