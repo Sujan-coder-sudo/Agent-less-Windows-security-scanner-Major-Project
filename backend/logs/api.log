@@ -4631,3 +4631,66 @@ Traceback (most recent call last):
 2026-03-22 17:14:07,963 [INFO] werkzeug: [33mPress CTRL+C to quit[0m
 2026-03-22 17:14:15,666 [INFO] werkzeug: 127.0.0.1 - - [22/Mar/2026 17:14:15] "[33mGET / HTTP/1.1[0m" 404 -
 2026-03-22 17:14:15,862 [INFO] werkzeug: 127.0.0.1 - - [22/Mar/2026 17:14:15] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+2026-03-22 17:15:51,646 [INFO] werkzeug: 127.0.0.1 - - [22/Mar/2026 17:15:51] "GET /api/ping HTTP/1.1" 200 -
+2026-03-22 17:15:51,663 [INFO] werkzeug: 127.0.0.1 - - [22/Mar/2026 17:15:51] "GET /api/auth/status HTTP/1.1" 200 -
+2026-03-22 17:15:51,675 [INFO] werkzeug: 127.0.0.1 - - [22/Mar/2026 17:15:51] "GET /api/scans HTTP/1.1" 200 -
+2026-03-22 17:15:51,677 [INFO] werkzeug: 127.0.0.1 - - [22/Mar/2026 17:15:51] "GET /api/overview HTTP/1.1" 200 -
+2026-03-22 17:15:58,600 [INFO] werkzeug: 127.0.0.1 - - [22/Mar/2026 17:15:58] "GET /api/scans HTTP/1.1" 200 -
+2026-03-22 17:15:58,997 [INFO] werkzeug: 127.0.0.1 - - [22/Mar/2026 17:15:58] "GET /api/scans HTTP/1.1" 200 -
+2026-03-22 17:16:09,130 [INFO] __main__: [/api/scan/phase3] Starting scan
+2026-03-22 17:16:09,131 [INFO] services.scanner_service: Starting Phase 3 scan
+2026-03-22 17:16:09,131 [INFO] services.scanner_service: Executing Phase 3 script: C:\Users\pajja\Desktop\major proj\Agent-less-Windows-security-scanner-Major-Project\agentless-scanner/phase3/core1.py
+2026-03-22 17:16:09,131 [INFO] services.scanner_service: Working directory: C:\Users\pajja\Desktop\major proj\Agent-less-Windows-security-scanner-Major-Project\agentless-scanner/phase3
+2026-03-22 17:16:09,132 [INFO] utils.execution: Executing: C:\Users\pajja\AppData\Local\Python\pythoncore-3.14-64\python.exe C:\Users\pajja\Desktop\major proj\Agent-less-Windows-security-scanner-Major-Project\agentless-scanner/phase3/core1.py
+2026-03-22 17:16:09,169 [WARNING] utils.execution: Execution failed with code 2 in 0.04s
+2026-03-22 17:16:09,169 [INFO] services.scanner_service: Phase 3 execution complete: returncode=2
+2026-03-22 17:16:09,169 [WARNING] services.scanner_service: Phase 3 stderr: C:\Users\pajja\AppData\Local\Python\pythoncore-3.14-64\python.exe: can't open file 'C:\\Users\\pajja\\Desktop\\major proj\\Agent-less-Windows-security-scanner-Major-Project\\agentless-scanner/phase3/core1.py': [Errno 2] No such file or directory
+
+2026-03-22 17:16:09,169 [WARNING] services.scanner_service: Phase 3 scan returned non-zero code: 2
+2026-03-22 17:16:09,171 [INFO] services.scanner_service: Phase 3 scan complete: 0 vulns, score: 0
+2026-03-22 17:16:09,173 [INFO] werkzeug: 127.0.0.1 - - [22/Mar/2026 17:16:09] "POST /api/scan/phase3 HTTP/1.1" 200 -
+2026-03-22 17:16:09,200 [INFO] werkzeug: 127.0.0.1 - - [22/Mar/2026 17:16:09] "GET /api/overview HTTP/1.1" 200 -
+2026-03-22 17:16:09,209 [INFO] werkzeug: 127.0.0.1 - - [22/Mar/2026 17:16:09] "GET /api/scans HTTP/1.1" 200 -
+2026-03-22 17:16:09,477 [INFO] werkzeug: 127.0.0.1 - - [22/Mar/2026 17:16:09] "GET /api/ping HTTP/1.1" 200 -
+2026-03-22 17:16:09,493 [INFO] werkzeug: 127.0.0.1 - - [22/Mar/2026 17:16:09] "GET /api/auth/status HTTP/1.1" 200 -
+2026-03-22 17:16:09,507 [INFO] werkzeug: 127.0.0.1 - - [22/Mar/2026 17:16:09] "GET /api/scans HTTP/1.1" 200 -
+2026-03-22 17:16:09,507 [INFO] werkzeug: 127.0.0.1 - - [22/Mar/2026 17:16:09] "GET /api/overview HTTP/1.1" 200 -
+2026-03-22 17:16:14,905 [INFO] __main__: [/api/scan/phase3] Starting scan
+2026-03-22 17:16:14,906 [INFO] services.scanner_service: Starting Phase 3 scan
+2026-03-22 17:16:14,906 [INFO] services.scanner_service: Executing Phase 3 script: C:\Users\pajja\Desktop\major proj\Agent-less-Windows-security-scanner-Major-Project\agentless-scanner/phase3/core1.py
+2026-03-22 17:16:14,906 [INFO] services.scanner_service: Working directory: C:\Users\pajja\Desktop\major proj\Agent-less-Windows-security-scanner-Major-Project\agentless-scanner/phase3
+2026-03-22 17:16:14,907 [INFO] utils.execution: Executing: C:\Users\pajja\AppData\Local\Python\pythoncore-3.14-64\python.exe C:\Users\pajja\Desktop\major proj\Agent-less-Windows-security-scanner-Major-Project\agentless-scanner/phase3/core1.py
+2026-03-22 17:16:14,936 [WARNING] utils.execution: Execution failed with code 2 in 0.03s
+2026-03-22 17:16:14,936 [INFO] services.scanner_service: Phase 3 execution complete: returncode=2
+2026-03-22 17:16:14,936 [WARNING] services.scanner_service: Phase 3 stderr: C:\Users\pajja\AppData\Local\Python\pythoncore-3.14-64\python.exe: can't open file 'C:\\Users\\pajja\\Desktop\\major proj\\Agent-less-Windows-security-scanner-Major-Project\\agentless-scanner/phase3/core1.py': [Errno 2] No such file or directory
+
+2026-03-22 17:16:14,937 [WARNING] services.scanner_service: Phase 3 scan returned non-zero code: 2
+2026-03-22 17:16:14,938 [INFO] services.scanner_service: Phase 3 scan complete: 0 vulns, score: 0
+2026-03-22 17:16:14,943 [INFO] werkzeug: 127.0.0.1 - - [22/Mar/2026 17:16:14] "POST /api/scan/phase3 HTTP/1.1" 200 -
+2026-03-22 17:16:14,960 [INFO] werkzeug: 127.0.0.1 - - [22/Mar/2026 17:16:14] "GET /api/overview HTTP/1.1" 200 -
+2026-03-22 17:16:14,974 [INFO] werkzeug: 127.0.0.1 - - [22/Mar/2026 17:16:14] "GET /api/scans HTTP/1.1" 200 -
+2026-03-22 17:16:15,241 [INFO] werkzeug: 127.0.0.1 - - [22/Mar/2026 17:16:15] "GET /api/ping HTTP/1.1" 200 -
+2026-03-22 17:16:15,262 [INFO] werkzeug: 127.0.0.1 - - [22/Mar/2026 17:16:15] "GET /api/auth/status HTTP/1.1" 200 -
+2026-03-22 17:16:15,281 [INFO] werkzeug: 127.0.0.1 - - [22/Mar/2026 17:16:15] "GET /api/overview HTTP/1.1" 200 -
+2026-03-22 17:16:15,281 [INFO] werkzeug: 127.0.0.1 - - [22/Mar/2026 17:16:15] "GET /api/scans HTTP/1.1" 200 -
+2026-03-22 17:16:17,015 [INFO] werkzeug: 127.0.0.1 - - [22/Mar/2026 17:16:17] "GET /api/scans HTTP/1.1" 200 -
+2026-03-22 17:16:17,864 [INFO] __main__: [/api/scan/phase3] Starting scan
+2026-03-22 17:16:17,864 [INFO] services.scanner_service: Starting Phase 3 scan
+2026-03-22 17:16:17,865 [INFO] services.scanner_service: Executing Phase 3 script: C:\Users\pajja\Desktop\major proj\Agent-less-Windows-security-scanner-Major-Project\agentless-scanner/phase3/core1.py
+2026-03-22 17:16:17,866 [INFO] services.scanner_service: Working directory: C:\Users\pajja\Desktop\major proj\Agent-less-Windows-security-scanner-Major-Project\agentless-scanner/phase3
+2026-03-22 17:16:17,866 [INFO] utils.execution: Executing: C:\Users\pajja\AppData\Local\Python\pythoncore-3.14-64\python.exe C:\Users\pajja\Desktop\major proj\Agent-less-Windows-security-scanner-Major-Project\agentless-scanner/phase3/core1.py
+2026-03-22 17:16:17,893 [WARNING] utils.execution: Execution failed with code 2 in 0.03s
+2026-03-22 17:16:17,893 [INFO] services.scanner_service: Phase 3 execution complete: returncode=2
+2026-03-22 17:16:17,893 [WARNING] services.scanner_service: Phase 3 stderr: C:\Users\pajja\AppData\Local\Python\pythoncore-3.14-64\python.exe: can't open file 'C:\\Users\\pajja\\Desktop\\major proj\\Agent-less-Windows-security-scanner-Major-Project\\agentless-scanner/phase3/core1.py': [Errno 2] No such file or directory
+
+2026-03-22 17:16:17,894 [WARNING] services.scanner_service: Phase 3 scan returned non-zero code: 2
+2026-03-22 17:16:17,895 [INFO] services.scanner_service: Phase 3 scan complete: 0 vulns, score: 0
+2026-03-22 17:16:17,897 [INFO] werkzeug: 127.0.0.1 - - [22/Mar/2026 17:16:17] "POST /api/scan/phase3 HTTP/1.1" 200 -
+2026-03-22 17:16:17,911 [INFO] werkzeug: 127.0.0.1 - - [22/Mar/2026 17:16:17] "GET /api/overview HTTP/1.1" 200 -
+2026-03-22 17:16:17,921 [INFO] werkzeug: 127.0.0.1 - - [22/Mar/2026 17:16:17] "GET /api/scans HTTP/1.1" 200 -
+2026-03-22 17:16:18,197 [INFO] werkzeug: 127.0.0.1 - - [22/Mar/2026 17:16:18] "GET /api/ping HTTP/1.1" 200 -
+2026-03-22 17:16:18,215 [INFO] werkzeug: 127.0.0.1 - - [22/Mar/2026 17:16:18] "GET /api/auth/status HTTP/1.1" 200 -
+2026-03-22 17:16:18,226 [INFO] werkzeug: 127.0.0.1 - - [22/Mar/2026 17:16:18] "GET /api/scans HTTP/1.1" 200 -
+2026-03-22 17:16:18,227 [INFO] werkzeug: 127.0.0.1 - - [22/Mar/2026 17:16:18] "GET /api/overview HTTP/1.1" 200 -
+2026-03-22 17:17:05,632 [INFO] werkzeug: 127.0.0.1 - - [22/Mar/2026 17:17:05] "GET /api/scans HTTP/1.1" 200 -
+2026-03-22 17:17:13,718 [INFO] werkzeug: 127.0.0.1 - - [22/Mar/2026 17:17:13] "GET /api/export/pdf/3 HTTP/1.1" 200 -
