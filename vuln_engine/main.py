@@ -22,6 +22,12 @@ def main():
     print("\n=== Vulnerability Report ===\n")
     print(json.dumps(findings, indent=4))
 
+    # ✅ Save JSON for dashboard
+    with open("report.json", "w") as f:
+        json.dump(findings, f, indent=4)
+
+    print("\nReport saved to report.json")
+
     print("\n=== SYSTEM RISK SCORE ===")
     print(f"Risk Score: {risk_score} / 10")
 
