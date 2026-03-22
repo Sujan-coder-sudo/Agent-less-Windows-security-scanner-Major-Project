@@ -4621,3 +4621,13 @@ Traceback (most recent call last):
 2026-02-27 21:27:32,135 [INFO] werkzeug: 127.0.0.1 - - [27/Feb/2026 21:27:32] "GET /api/export/pdf/3 HTTP/1.1" 200 -
 2026-02-27 21:28:29,606 [INFO] werkzeug: 127.0.0.1 - - [27/Feb/2026 21:28:29] "GET /api/history/2 HTTP/1.1" 200 -
 2026-02-27 21:28:32,182 [INFO] werkzeug: 127.0.0.1 - - [27/Feb/2026 21:28:32] "GET /api/export/pdf/2 HTTP/1.1" 200 -
+2026-03-22 17:14:07,944 [INFO] __main__: Starting Agentless Scanner API on port 5000
+2026-03-22 17:14:07,945 [INFO] __main__: Registered /api routes: ['/api/auth/logout', '/api/auth/status', '/api/auth/verify', '/api/export/<format>/<int:scan_id>', '/api/export/all/<format>', '/api/health', '/api/history', '/api/history/<int:scan_id>', '/api/overview', '/api/phase2/run', '/api/phase3/run', '/api/ping', '/api/routes', '/api/scan/phase2', '/api/scan/phase3', '/api/scans', '/api/scans/clear']
+2026-03-22 17:14:07,945 [INFO] __main__: CORS: origins=['http://127.0.0.1:5500'] supports_credentials=True
+2026-03-22 17:14:07,963 [INFO] werkzeug: [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://192.168.0.102:5000
+2026-03-22 17:14:07,963 [INFO] werkzeug: [33mPress CTRL+C to quit[0m
+2026-03-22 17:14:15,666 [INFO] werkzeug: 127.0.0.1 - - [22/Mar/2026 17:14:15] "[33mGET / HTTP/1.1[0m" 404 -
+2026-03-22 17:14:15,862 [INFO] werkzeug: 127.0.0.1 - - [22/Mar/2026 17:14:15] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -

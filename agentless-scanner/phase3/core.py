@@ -14,6 +14,8 @@ import requests
 import ctypes
 import re
 from typing import List, Dict, Any
+from datetime import datetime
+import uuid
 
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
@@ -38,6 +40,12 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 # -----------------------------
 # UTILITY FUNCTIONS
 # -----------------------------
+
+def generate_scan_metadata():
+    return {
+        "scan_id": str(uuid.uuid4()),
+        "timestamp": datetime.utcnow().isoformat()
+    }
 
 COMMON_PORT_MAP = {
     "3389": "RDP",
@@ -505,14 +513,31 @@ def build_summary(report):
         "failed": sum(1 for r in report if r.get("status") == "failed")
     }
 
-def export_json(report):
-    final_output = {
-        "summary": build_summary(report),
-        "results": report
-    }
+def export_json(new_scan):
     path = os.path.join(OUTPUT_DIR, "scan_report.json")
+
+    # Load existing data
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            # Ensure it's a list
+            if not isinstance(data, list):
+                data = [data]
+
+        except Exception:
+            data = []
+    else:
+        data = []
+
+    # Append new scan
+    data.append(new_scan)
+
+    # Save back
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(final_output, f, indent=2)
+        json.dump(data, f, indent=2)
+
     return path
 
 def export_pdf(report):
@@ -567,7 +592,15 @@ def main():
         scan_connections()
     ]
 
-    json_path = export_json(report)
+    metadata = generate_scan_metadata()
+
+    final_output = {
+        "scan_info": metadata,
+        "summary": build_summary(report),
+        "results": report
+    }
+
+    json_path = export_json(final_output)
     pdf_path = export_pdf(report)
 
     print("Report generated")
