@@ -7,6 +7,8 @@
     <link rel="stylesheet" href="css/style.css">
     <!-- Google Fonts for Modern Typography -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <div class="layout-wrapper">
@@ -32,8 +34,8 @@
                     <li><a href="#" class="nav-item" data-target="history-section">
                         <span class="icon">📂</span> Scan History
                     </a></li>
-                    <li><a href="#" class="nav-item" data-target="reports-section">
-                        <span class="icon">📈</span> Reports (WIP)
+                    <li><a href="#" class="nav-item" data-target="analytics-section">
+                        <span class="icon">📈</span> Security Analytics
                     </a></li>
                 </ul>
             </nav>
@@ -217,12 +219,65 @@
                     </div>
                 </section>
                 
-                <section id="reports-section" class="section">
+                <section id="analytics-section" class="section">
                     <header class="section-header">
-                        <h2>Reports & Analytics</h2>
+                        <h2>Security Analytics</h2>
+                        <div class="header-actions">
+                            <button class="btn btn-secondary btn-sm" id="btn-refresh-analytics">↻ Refresh Latest</button>
+                        </div>
                     </header>
-                    <div class="panel center-content placeholder-panel">
-                        <p>Detailed reports and PDF generation coming soon.</p>
+                    
+                    <!-- Summary Widgets -->
+                    <div class="metrics-grid">
+                        <div class="metric-card">
+                            <div class="metric-title">Total Checks</div>
+                            <div class="metric-value" id="analytic-checks">0</div>
+                        </div>
+                        <div class="metric-card alert">
+                            <div class="metric-title">Critical Issues</div>
+                            <div class="metric-value text-danger" id="analytic-critical">0</div>
+                        </div>
+                        <div class="metric-card warning">
+                            <div class="metric-title">High Issues</div>
+                            <div class="metric-value text-warning" id="analytic-high">0</div>
+                        </div>
+                        <div class="metric-card" style="box-shadow: 0 0 10px rgba(255,184,77,0.2);">
+                            <div class="metric-title">Medium Issues</div>
+                            <div class="metric-value" style="color:var(--accent-yellow);" id="analytic-medium">0</div>
+                        </div>
+                        <div class="metric-card" style="box-shadow: 0 0 10px rgba(0,255,102,0.2);">
+                            <div class="metric-title">Low Issues</div>
+                            <div class="metric-value" style="color:var(--accent-green);" id="analytic-low">0</div>
+                        </div>
+                    </div>
+
+                    <!-- Risk Distribution & Category Table -->
+                    <div class="dashboard-panels analytics-panels">
+                        <div class="panel">
+                            <h3>Risk Distribution</h3>
+                            <div class="chart-container" style="position: relative; height:250px; width:100%; display: flex; justify-content: center;">
+                                <canvas id="risk-donut-chart"></canvas>
+                            </div>
+                        </div>
+                        <div class="panel">
+                            <h3>Detailed Findings</h3>
+                            <div class="table-container" style="max-height: 250px; overflow-y: auto;">
+                                <table class="data-table hoverable" id="analytics-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Category</th>
+                                            <th>Risk Level</th>
+                                            <th>Status</th>
+                                            <th>Key Finding</th>
+                                            <th>Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <!-- Dynamic content populated by analytics.js -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                 </section>
 
@@ -250,5 +305,6 @@
     <script src="js/api.js"></script>
     <script src="js/ui.js"></script>
     <script src="js/main.js"></script>
+    <script src="js/analytics.js"></script>
 </body>
 </html>
