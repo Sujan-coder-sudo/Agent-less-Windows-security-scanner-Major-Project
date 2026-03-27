@@ -4,10 +4,11 @@ from correlator import correlate_services
 from scorer import calculate_risk
 import json
 
-def main():
-    target = input("Enter target IP: ")
-
-    print("\nStep 1: Running Nmap...")
+def run_scan(target: str) -> dict:
+    """
+    Execute vulnerability scan using pure python modules.
+    """
+    print(f"\nStep 1: Running Nmap against {target}...")
     nmap_output = run_nmap(target)
 
     print("\nStep 2: Parsing results...")
@@ -18,19 +19,25 @@ def main():
     findings = correlate_services(services)
 
     risk_score = calculate_risk(findings)
-
-    print("\n=== Vulnerability Report ===\n")
-    print(json.dumps(findings, indent=4))
-
-    # ✅ Save JSON for dashboard
-    with open("report.json", "w") as f:
-        json.dump(findings, f, indent=4)
-
-    print("\nReport saved to report.json")
-
+    findings["summary"] = findings.get("summary", {})
+    findings["summary"]["risk_score"] = risk_score
+    findings["scan_info"] = findings.get("scan_info", {})
+    findings["scan_info"]["target"] = target
+    
     print("\n=== SYSTEM RISK SCORE ===")
     print(f"Risk Score: {risk_score} / 10")
 
+    return findings
+
+def main():
+    target = input("Enter target IP: ")
+    findings = run_scan(target)
+    
+    # Optional local save if run manually
+    with open("report.json", "w") as f:
+        json.dump(findings, f, indent=4)
+        
+    print("\nReport saved to report.json")
 
 if __name__ == "__main__":
     main()

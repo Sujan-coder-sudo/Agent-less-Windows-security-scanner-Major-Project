@@ -38,24 +38,12 @@ async function fetchScanData() {
         // Let's first try to get the real Phase 3 data or fallback to a known location
         
         let reportData = null;
-        try {
-            // First attempt to fetch from backend API
-            const response = await fetch(`${API_BASE}/scans/latest`);
-            if (response.ok) {
-                const res = await response.json();
-                reportData = res.data || res;
-            } else {
-                throw new Error('API not available, fallback to mock data');
-            }
-        } catch (e) {
-            dbg('API fallback, attempting to load from phase3 output...', e.message);
-            // Fallback to local file if running through local server
-            const fallbackResponse = await fetch('../agentless-scanner/phase3/output/scan_report.json');
-            if (fallbackResponse.ok) {
-                reportData = await fallbackResponse.json();
-            } else {
-                throw new Error('Mock data fallback failed');
-            }
+        const response = await fetch(`${API_BASE}/scans/latest`);
+        if (response.ok) {
+            const res = await response.json();
+            reportData = res.data || res;
+        } else {
+            throw new Error(`Failed to load data from API: HTTP ${response.status}`);
         }
         
         // Handle array wrap issue (scan_report.json comes as array of reports)
@@ -86,11 +74,11 @@ async function fetchScanData() {
 function renderSummaryCards(summary) {
     if (!summary) return;
     
-    document.getElementById('analytic-checks').textContent = summary.total_checks || 0;
-    document.getElementById('analytic-critical').textContent = summary.critical || 0;
-    document.getElementById('analytic-high').textContent = summary.high || 0;
-    document.getElementById('analytic-medium').textContent = summary.medium || 0;
-    document.getElementById('analytic-low').textContent = summary.low || 0;
+    document.getElementById('analytic-checks').textContent = summary.total_vulnerabilities || summary.total_checks || 0;
+    document.getElementById('analytic-critical').textContent = summary.critical_count || summary.critical || 0;
+    document.getElementById('analytic-high').textContent = summary.high_count || summary.high || 0;
+    document.getElementById('analytic-medium').textContent = summary.medium_count || summary.medium || 0;
+    document.getElementById('analytic-low').textContent = summary.low_count || summary.low || 0;
 }
 
 function renderRiskChart(summary) {
@@ -117,10 +105,10 @@ function renderRiskChart(summary) {
             labels: ['Critical', 'High', 'Medium', 'Low'],
             datasets: [{
                 data: [
-                    summary.critical || 0, 
-                    summary.high || 0, 
-                    summary.medium || 0, 
-                    summary.low || 0
+                    summary.critical_count || summary.critical || 0, 
+                    summary.high_count || summary.high || 0, 
+                    summary.medium_count || summary.medium || 0, 
+                    summary.low_count || summary.low || 0
                 ],
                 backgroundColor: chartColors,
                 borderWidth: 0,

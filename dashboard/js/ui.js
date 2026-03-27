@@ -7,12 +7,13 @@ const UI = {
     // Show notification banners
     notify(msg, type = 'info') {
         const container = document.getElementById('notification-container');
+        if (!container) return;
         const notif = document.createElement('div');
         notif.className = `notification ${type}`;
-        
+
         let icon = 'ℹ️';
-        if(type==='error') icon = '🚨';
-        if(type==='success') icon = '✅';
+        if (type === 'error')   icon = '🚨';
+        if (type === 'success') icon = '✅';
 
         notif.innerHTML = `
             <span>${icon} ${msg}</span>
@@ -21,77 +22,69 @@ const UI = {
 
         container.appendChild(notif);
 
-        notif.querySelector('.close-btn').addEventListener('click', () => {
-            notif.remove();
-        });
+        notif.querySelector('.close-btn').addEventListener('click', () => notif.remove());
 
-        // Auto remove after 5s
         setTimeout(() => {
-            if (document.body.contains(notif)) {
-                notif.remove();
-            }
+            if (document.body.contains(notif)) notif.remove();
         }, 5000);
     },
 
     // Navigation orchestration
     switchSection(targetId) {
-        // Update nav links
         document.querySelectorAll('.nav-item').forEach(el => {
             el.classList.remove('active');
-            if(el.getAttribute('data-target') === targetId) {
-                el.classList.add('active');
-            }
+            if (el.getAttribute('data-target') === targetId) el.classList.add('active');
         });
-
-        // Update sections
         document.querySelectorAll('.section').forEach(el => {
             el.classList.remove('active');
-            if(el.id === targetId) {
-                el.classList.add('active');
-            }
+            if (el.id === targetId) el.classList.add('active');
         });
     },
 
     // Loading button state
     setButtonLoading(btnEl, isLoading) {
+        if (!btnEl) return;
         const textSpan = btnEl.querySelector('.btn-text');
-        const spinner = btnEl.querySelector('.spinner');
+        const spinner  = btnEl.querySelector('.spinner');
         if (isLoading) {
             btnEl.disabled = true;
-            spinner.classList.remove('hidden');
+            if (spinner)  spinner.classList.remove('hidden');
         } else {
             btnEl.disabled = false;
-            spinner.classList.add('hidden');
+            if (spinner)  spinner.classList.add('hidden');
         }
     },
 
-    // Render bar chart
+    // Render bar chart for overview
     renderVulnChart(data) {
         const chartContainer = document.getElementById('vuln-chart');
-        chartContainer.innerHTML = ''; // reset
+        if (!chartContainer) return;
+        chartContainer.innerHTML = '';
 
-        const maxVal = Math.max(...data.map(d => d.value), 1); // Avoid div by 0
+        if (!data || !data.length) return;
+
+        const maxVal = Math.max(...data.map(d => d.value), 1);
 
         data.forEach(item => {
             const heightPercent = (item.value / maxVal) * 100;
-            
+
             const col = document.createElement('div');
             col.className = 'bar-col';
 
             const bar = document.createElement('div');
             bar.className = 'bar';
-            bar.style.height = '0%'; // Start at 0 for animation
+            bar.style.height = '0%';
             if (item.color) {
-                bar.style.background = `linear-gradient(0deg, rgba(0,0,0,0) 0%, ${item.color} 100%)`;
-                bar.style.boxShadow = `inset 0 0 10px ${item.color}`;
+                bar.style.background  = `linear-gradient(0deg, rgba(0,0,0,0) 0%, ${item.color} 100%)`;
+                bar.style.boxShadow   = `inset 0 0 10px ${item.color}`;
             }
 
             const val = document.createElement('div');
-            val.className = 'bar-val';
+            val.className   = 'bar-val';
             val.textContent = item.value;
 
             const label = document.createElement('div');
-            label.className = 'bar-label';
+            label.className   = 'bar-label';
             label.textContent = item.label;
 
             bar.appendChild(val);
@@ -99,101 +92,86 @@ const UI = {
             col.appendChild(label);
             chartContainer.appendChild(col);
 
-            // Trigger animation on next frame
             requestAnimationFrame(() => {
                 setTimeout(() => {
-                    bar.style.height = `${Math.max(heightPercent, 5)}%`; // Min 5% height
+                    bar.style.height = `${Math.max(heightPercent, 5)}%`;
                 }, 100);
             });
         });
     },
 
-    // Badges UI
-    getRiskBadge(riskStr) {
+    // Risk badge
+    getRiskBadge(riskStr = 'LOW') {
+        const r = riskStr.toUpperCase();
         let type = 'info';
-        if(riskStr.toLowerCase().includes('high')) type = 'danger';
-        else if(riskStr.toLowerCase().includes('medium')) type = 'warning';
-        else if(riskStr.toLowerCase().includes('low')) type = 'success';
-        
+        if (r === 'CRITICAL') type = 'danger';
+        else if (r === 'HIGH')   type = 'danger';
+        else if (r === 'MEDIUM') type = 'warning';
+        else if (r === 'LOW')    type = 'success';
         return `<span class="status-badge ${type}">${riskStr}</span>`;
     },
 
-    getStatusBadge(statusStr) {
+    // Status badge
+    getStatusBadge(statusStr = '') {
         let type = 'info';
         const s = statusStr.toLowerCase();
-        if(s.includes('success') || s.includes('up')) type = 'success';
-        if(s.includes('fail') || s.includes('error')) type = 'danger';
-        
+        if (s.includes('success') || s.includes('completed') || s.includes('up')) type = 'success';
+        if (s.includes('fail') || s.includes('error')) type = 'danger';
         return `<span class="status-badge ${type}">${statusStr}</span>`;
     },
 
-    // Modal UI
+    // Scan type label helper
+    getScanTypeLabel(scanType) {
+        if (scanType === 'port_scan')      return '🔍 Port Scanner';
+        if (scanType === 'os_inspection')  return '🔐 OS Inspection';
+        return scanType || 'Unknown';
+    },
+
+    // Modal
     showModal(title, contentHtml) {
         const modal = document.getElementById('details-modal');
-        document.getElementById('modal-title').textContent = title;
-        document.getElementById('modal-body').innerHTML = contentHtml;
+        if (!modal) return;
+        document.getElementById('modal-title').textContent  = title;
+        document.getElementById('modal-body').innerHTML     = contentHtml;
         modal.classList.remove('hidden');
     },
 
     closeModal() {
-        document.getElementById('details-modal').classList.add('hidden');
+        const modal = document.getElementById('details-modal');
+        if (modal) modal.classList.add('hidden');
     },
 
-    // Format Relative Time - with safety guards
+    // Relative time
     timeAgo(ts) {
-        // Guard against invalid values
-        if (ts === undefined || ts === null || ts === '' || isNaN(ts)) {
-            return 'N/A';
-        }
-        
+        if (ts === undefined || ts === null || ts === '') return 'N/A';
         const timestamp = Number(ts);
-        
-        // Check if finite number
-        if (!Number.isFinite(timestamp)) {
-            return 'N/A';
-        }
-        
-        const now = Date.now();
-        const diffMs = timestamp - now;
-        
-        // Check if difference is valid
-        if (!Number.isFinite(diffMs)) {
-            return 'N/A';
-        }
-        
+        if (!Number.isFinite(timestamp)) return 'N/A';
+
+        const diffMs = timestamp - Date.now();
+        if (!Number.isFinite(diffMs)) return 'N/A';
+
         try {
             const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
-            const daysDifference = Math.round(diffMs / 86400000);
-            const hoursDifference = Math.round(diffMs / 3600000);
-            const minutesDifference = Math.round(diffMs / 60000);
-            
-            if (Math.abs(daysDifference) > 0) {
-                return rtf.format(daysDifference, 'day');
-            } else if (Math.abs(hoursDifference) > 0) {
-                return rtf.format(hoursDifference, 'hour');
-            } else {
-                return rtf.format(minutesDifference, 'minute');
-            }
+            const days    = Math.round(diffMs / 86400000);
+            const hours   = Math.round(diffMs / 3600000);
+            const minutes = Math.round(diffMs / 60000);
+
+            if (Math.abs(days)  > 0)  return rtf.format(days,    'day');
+            if (Math.abs(hours) > 0)  return rtf.format(hours,   'hour');
+            return rtf.format(minutes, 'minute');
         } catch (e) {
-            console.error('RelativeTimeFormat error:', e);
             return 'N/A';
         }
     },
 
-    // Format Date - with safety guards
+    // Format date string
     formatDate(dateStr) {
-        if (!dateStr || dateStr === 'null' || dateStr === 'undefined') {
-            return 'N/A';
-        }
-        
+        if (!dateStr || dateStr === 'null' || dateStr === 'undefined') return 'N/A';
         try {
             const date = new Date(dateStr);
-            if (isNaN(date.getTime())) {
-                return 'Invalid date';
-            }
+            if (isNaN(date.getTime())) return 'Invalid date';
             return date.toLocaleString();
-        } catch (e) {
-            console.error('Date formatting error:', e);
+        } catch {
             return 'Invalid date';
         }
     }
