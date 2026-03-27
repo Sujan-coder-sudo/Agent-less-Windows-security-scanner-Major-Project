@@ -1,139 +1,241 @@
 from cve_lookup import search_cve
+from typing import List, Dict, Any
 
-def apply_rules(service_data):
+# Production-grade vulnerability intelligence database
+# Maps common ports to their security risk profiles and CVE queries
+PORT_RULES = {
+    21: {
+        "service": "FTP",
+        "risk": "High",
+        "query": "FTP anonymous authentication vulnerability",
+        "note": "FTP often allows anonymous access and transmits credentials in plaintext"
+    },
+    22: {
+        "service": "SSH",
+        "risk": "Medium",
+        "query": "SSH brute force vulnerability",
+        "note": "SSH is secure but may be vulnerable to brute-force attacks if weak credentials are used"
+    },
+    23: {
+        "service": "Telnet",
+        "risk": "Critical",
+        "query": "Telnet insecure protocol",
+        "note": "Telnet transmits all data including passwords in plaintext - immediate remediation required"
+    },
+    25: {
+        "service": "SMTP",
+        "risk": "Medium",
+        "query": "SMTP open relay vulnerability",
+        "note": "Misconfigured SMTP servers can be abused for spam and phishing campaigns"
+    },
+    53: {
+        "service": "DNS",
+        "risk": "Medium",
+        "query": "DNS amplification attack",
+        "note": "Open DNS resolvers can be abused for DDoS amplification attacks"
+    },
+    80: {
+        "service": "HTTP",
+        "risk": "Medium",
+        "query": "web server vulnerability",
+        "note": "Unencrypted web traffic susceptible to interception and manipulation"
+    },
+    110: {
+        "service": "POP3",
+        "risk": "Medium",
+        "query": "POP3 plaintext vulnerability",
+        "note": "POP3 typically uses plaintext authentication - consider POP3S"
+    },
+    135: {
+        "service": "RPC",
+        "risk": "High",
+        "query": "Windows RPC vulnerability",
+        "note": "RPC is commonly used in lateral movement and ransomware propagation"
+    },
+    139: {
+        "service": "NetBIOS",
+        "risk": "Medium",
+        "query": "NetBIOS information leakage",
+        "note": "NetBIOS can expose system information and enable enumeration attacks"
+    },
+    143: {
+        "service": "IMAP",
+        "risk": "Medium",
+        "query": "IMAP vulnerability",
+        "note": "IMAP without TLS exposes credentials and email content"
+    },
+    443: {
+        "service": "HTTPS",
+        "risk": "Medium",
+        "query": "SSL TLS vulnerability",
+        "note": "Check for outdated SSL/TLS versions and weak cipher suites"
+    },
+    445: {
+        "service": "SMB",
+        "risk": "High",
+        "query": "SMB EternalBlue exploit",
+        "note": "SMB has been exploited by WannaCry, NotPetya, and numerous ransomware strains"
+    },
+    1433: {
+        "service": "MSSQL",
+        "risk": "High",
+        "query": "Microsoft SQL Server vulnerability",
+        "note": "Exposed MSSQL instances are frequently targeted for cryptocurrency mining"
+    },
+    1521: {
+        "service": "Oracle",
+        "risk": "High",
+        "query": "Oracle Database vulnerability",
+        "note": "Oracle databases have extensive attack surface with critical historical vulnerabilities"
+    },
+    3306: {
+        "service": "MySQL",
+        "risk": "High",
+        "query": "MySQL authentication bypass",
+        "note": "Exposed MySQL databases are prime targets for data exfiltration"
+    },
+    3389: {
+        "service": "RDP",
+        "risk": "High",
+        "query": "RDP BlueKeep vulnerability",
+        "note": "RDP is a primary attack vector - ensure NLA is enabled and access is restricted"
+    },
+    5432: {
+        "service": "PostgreSQL",
+        "risk": "High",
+        "query": "PostgreSQL vulnerability",
+        "note": "Exposed PostgreSQL instances often use default/weak credentials"
+    },
+    5985: {
+        "service": "WinRM",
+        "risk": "High",
+        "query": "WinRM remote execution vulnerability",
+        "note": "Windows Remote Management enables PowerShell remoting - restrict access"
+    },
+    6379: {
+        "service": "Redis",
+        "risk": "Critical",
+        "query": "Redis unauthenticated access",
+        "note": "Redis lacks authentication by default - immediate access control required"
+    },
+    8080: {
+        "service": "HTTP-Alt",
+        "risk": "Medium",
+        "query": "web server misconfiguration",
+        "note": "Alternative HTTP ports often host admin interfaces or proxy servers"
+    },
+    8443: {
+        "service": "HTTPS-Alt",
+        "risk": "Medium",
+        "query": "SSL misconfiguration",
+        "note": "Alternative HTTPS ports may use self-signed or expired certificates"
+    },
+    9200: {
+        "service": "Elasticsearch",
+        "risk": "Critical",
+        "query": "Elasticsearch exposure",
+        "note": "Elasticsearch frequently lacks authentication leading to data breaches"
+    },
+    11211: {
+        "service": "Memcached",
+        "risk": "Critical",
+        "query": "Memcached amplification attack",
+        "note": "Memcached DDoS amplification attacks have reached 1.7 Tbps - firewall immediately"
+    },
+    27017: {
+        "service": "MongoDB",
+        "risk": "Critical",
+        "query": "MongoDB exposed database",
+        "note": "MongoDB ransomware attacks target exposed instances without authentication"
+    },
+    5000: {
+        "service": "UPnP",
+        "risk": "High",
+        "query": "UPnP vulnerability",
+        "note": "UPnP can be exploited to bypass firewalls and expose internal services"
+    },
+    5900: {
+        "service": "VNC",
+        "risk": "High",
+        "query": "VNC authentication bypass",
+        "note": "VNC often uses weak passwords or no authentication - major security risk"
+    }
+}
+
+
+def apply_rules(service_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Apply vulnerability intelligence rules to a detected service.
+    
+    Args:
+        service_data: Dict with keys 'port', 'state', 'service', 'version'
+    
+    Returns:
+        List of finding dictionaries with CVE information
+    """
     findings = []
-
-    port = service_data["port"]
-    state = service_data["state"]
-    service = service_data["service"]
-    version = service_data["version"]
-
-    # 🔴 SMB
-    if port == 445:
+    
+    port = service_data.get("port")
+    state = service_data.get("state", "unknown")
+    service = service_data.get("service", "unknown")
+    version = service_data.get("version", "")
+    
+    # Skip if port not in our threat intelligence database
+    if port not in PORT_RULES:
+        # Generic rule for unknown ports
         if state == "open":
-            risk = "High"
-            note = "SMB exposed - high attack surface"
-        else:
-            risk = "Low"
-            note = "SMB filtered by firewall"
-
-        cves = search_cve(
-            primary_keyword="SMBv1 Windows exploit",
-            fallback_keyword="EternalBlue SMB"
-        )
-
+            findings.append({
+                "port": port,
+                "service": service,
+                "state": state,
+                "issue": f"Unknown service '{service}' on port {port}",
+                "risk": "Medium",
+                "note": "Unidentified service - manual verification recommended",
+                "cves": []
+            })
+        return findings
+    
+    rule = PORT_RULES[port]
+    
+    # Build the finding based on state
+    if state == "open":
+        # Look up CVEs for this service
+        cves = search_cve(rule["query"])
+        
         findings.append({
             "port": port,
+            "service": rule["service"],
             "state": state,
-            "issue": "SMB service detected",
-            "risk": risk,
-            "note": note,
-            "cves": cves if cves else ["Manual verification required"]
+            "issue": f"{rule['service']} service exposed on port {port}",
+            "risk": rule["risk"],
+            "note": rule["note"],
+            "cves": cves if cves else ["No recent CVEs found - verify manually"],
+            "version": version
         })
-
-    # 🔴 RDP
-    elif port == 3389:
-        if state == "open":
-            risk = "High"
-            note = "RDP exposed - remote access possible"
-        else:
-            risk = "Low"
-            note = "RDP filtered by firewall"
-
-        cves = search_cve(
-            primary_keyword="RDP remote code execution",
-            fallback_keyword="BlueKeep RDP vulnerability"
-        )
-
+    elif state == "filtered":
+        # Service exists but is filtered - reduced risk
         findings.append({
             "port": port,
+            "service": rule["service"],
             "state": state,
-            "issue": "RDP service detected",
-            "risk": risk,
-            "note": note,
-            "cves": cves if cves else ["Check RDP configuration manually"]
+            "issue": f"{rule['service']} port {port} is filtered",
+            "risk": "Low",
+            "note": "Service detected but protected by firewall",
+            "cves": [],
+            "version": version
         })
-
-    # 🔴 RPC
-    elif port == 135:
-        if state == "open":
-            risk = "Medium"
-            note = "RPC exposed - used in lateral movement"
-        else:
-            risk = "Low"
-            note = "RPC filtered"
-
+    else:
+        # Closed or other state
         findings.append({
             "port": port,
+            "service": rule["service"],
             "state": state,
-            "issue": "RPC service detected",
-            "risk": risk,
-            "note": note,
-            "cves": ["Potential lateral movement vector"]
+            "issue": f"{rule['service']} port {port} is {state}",
+            "risk": "Low",
+            "note": "Service not accessible from network",
+            "cves": [],
+            "version": version
         })
-
-    # 🔴 NetBIOS
-    elif port == 139:
-        if state == "open":
-            risk = "Medium"
-            note = "NetBIOS exposed - information leakage risk"
-        else:
-            risk = "Low"
-            note = "NetBIOS filtered"
-
-        findings.append({
-            "port": port,
-            "state": state,
-            "issue": "NetBIOS service detected",
-            "risk": risk,
-            "note": note,
-            "cves": ["Possible enumeration risk"]
-        })
-
-    # 🔴 WinRM
-    elif port == 5985:
-        if state == "open":
-            risk = "High"
-            note = "WinRM exposed - possible remote execution"
-        else:
-            risk = "Low"
-            note = "WinRM filtered"
-
-        cves = search_cve(
-            primary_keyword="WinRM remote execution vulnerability",
-            fallback_keyword="Windows remote management vulnerability"
-        )
-
-        findings.append({
-            "port": port,
-            "state": state,
-            "issue": "WinRM service detected",
-            "risk": risk,
-            "note": note,
-            "cves": cves if cves else ["Check configuration manually"]
-        })
-
-    # 🔴 HTTP
-    elif service == "http":
-        if state == "open":
-            risk = "Medium"
-            note = "Web service accessible"
-        else:
-            risk = "Low"
-            note = "Web service filtered"
-
-        cves = search_cve(
-            primary_keyword=version if version else "HTTP service",
-            fallback_keyword="HTTP server vulnerability"
-        )
-
-        findings.append({
-            "port": port,
-            "state": state,
-            "issue": f"HTTP service on port {port}",
-            "risk": risk,
-            "note": note,
-            "cves": cves if cves else ["Generic web vulnerabilities possible"]
-        })
-
+    
     return findings
+
