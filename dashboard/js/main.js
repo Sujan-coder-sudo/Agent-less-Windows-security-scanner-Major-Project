@@ -471,6 +471,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <td>${UI.getStatusBadge('Completed')}</td>
                     <td class="export-actions">
                         <button class="btn btn-sm btn-view-detail" data-id="${scan.id}">View</button>
+                        <button class="btn btn-sm btn-secondary" data-id="${scan.id}" onclick="Api.downloadPdf('${scan.id}')">PDF</button>
                     </td>
                 `;
 
@@ -541,6 +542,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <div><strong>Time:</strong> ${UI.formatDate(scan.timestamp)}</div>
                 </div>
                 ${summaryHtml}
+                <div class="modal-actions" style="margin-top:1rem;">
+                    <button class="btn btn-primary" onclick="Api.downloadPdf('${scan.id}')">📥 Download PDF Report</button>
+                </div>
                 <details class="raw-json-toggle" style="margin-top:1rem;">
                     <summary class="raw-json-summary"><span>{ } Full Record</span></summary>
                     <div class="raw-json-body">

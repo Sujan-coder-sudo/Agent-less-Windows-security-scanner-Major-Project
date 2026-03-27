@@ -158,6 +158,12 @@ const Api = {
         }
     },
 
+    /** GET /api/export/pdf/<id> — download PDF report */
+    downloadPdf(scanId) {
+        const url = `${API_BASE}/export/pdf/${encodeURIComponent(scanId)}`;
+        window.open(url, '_blank');
+    },
+
     isPortScanRunning()      { return scanState.portScanRunning; },
     isOsInspectionRunning()  { return scanState.osInspectionRunning; },
 };
