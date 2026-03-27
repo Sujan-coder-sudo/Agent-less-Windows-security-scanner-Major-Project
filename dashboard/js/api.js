@@ -102,45 +102,55 @@ const Api = {
                 return { totalHosts: 0, openPorts: 0, highRiskServices: 0, missingHotfixes: 0, lastScan: null, vulnData: [], recentHosts: [] };
             }
 
-            const result = latest.result || {};
+            // Unified shape: latest.result = { summary: {...}, data: [...] }
+            const result  = latest.result  || {};
+            const summary = result.summary || {};
+            const data    = result.data    || [];
 
             if (latest.scan_type === 'port_scan') {
-                const summary = result.summary || {};
-                const hosts   = result.hosts   || [];
+                // risk_distribution uses title-case keys: Critical, High, Medium, Low
+                const rd = summary.risk_distribution || {};
                 return {
-                    totalHosts:       summary.total_hosts      || hosts.length || 0,
-                    openPorts:        summary.total_open_ports || 0,
-                    highRiskServices: summary.high_risk_count  || 0,
+                    totalHosts:       summary.total_findings || data.length || 0,
+                    openPorts:        summary.open_ports     || 0,
+                    highRiskServices: (rd.High || 0) + (rd.Critical || 0),
                     missingHotfixes:  0,
                     lastScan:         latest.timestamp,
                     vulnData: [
-                        { label: 'Critical', value: summary.risk_distribution?.CRITICAL || 0, color: '#ff3366' },
-                        { label: 'High',     value: summary.risk_distribution?.HIGH     || 0, color: '#ff8800' },
-                        { label: 'Medium',   value: summary.risk_distribution?.MEDIUM   || 0, color: '#ffcc00' },
-                        { label: 'Low',      value: summary.risk_distribution?.LOW      || 0, color: '#00cc66' },
+                        { label: 'Critical', value: rd.Critical || 0, color: '#ff3366' },
+                        { label: 'High',     value: rd.High     || 0, color: '#ff8800' },
+                        { label: 'Medium',   value: rd.Medium   || 0, color: '#ffcc00' },
+                        { label: 'Low',      value: rd.Low      || 0, color: '#00cc66' },
                     ],
-                    recentHosts: hosts.slice(0, 5).map(h => ({
-                        ip: h.ip || '-', hostname: h.hostname || '-',
-                        risk: h.risk_level || 'LOW', lastSeen: latest.timestamp,
+                    // Show top 5 findings as "hosts" for overview table
+                    recentHosts: data.slice(0, 5).map(f => ({
+                        ip:       latest.target || '-',
+                        hostname: f.issue       || f.service || '-',
+                        risk:     (f.risk || 'Low').toUpperCase(),
+                        lastSeen: latest.timestamp,
                     })),
                 };
             }
 
-            // os_inspection
-            const summary = result.summary || {};
+            // os_inspection — summary has: total_checks, critical, high, medium, low
             return {
                 totalHosts:       1,
                 openPorts:        0,
-                highRiskServices: summary.high || 0,
+                highRiskServices: (summary.high || 0) + (summary.critical || 0),
                 missingHotfixes:  0,
                 lastScan:         latest.timestamp,
                 vulnData: [
-                    { label: 'Critical', value: summary.critical  || 0, color: '#ff3366' },
-                    { label: 'High',     value: summary.high      || 0, color: '#ff8800' },
-                    { label: 'Medium',   value: summary.medium    || 0, color: '#ffcc00' },
-                    { label: 'Low',      value: summary.low       || 0, color: '#00cc66' },
+                    { label: 'Critical', value: summary.critical || 0, color: '#ff3366' },
+                    { label: 'High',     value: summary.high     || 0, color: '#ff8800' },
+                    { label: 'Medium',   value: summary.medium   || 0, color: '#ffcc00' },
+                    { label: 'Low',      value: summary.low      || 0, color: '#00cc66' },
                 ],
-                recentHosts: [],
+                recentHosts: data.slice(0, 5).map(r => ({
+                    ip:       latest.target || '-',
+                    hostname: r.category    || '-',
+                    risk:     (r.risk       || 'LOW').toUpperCase(),
+                    lastSeen: latest.timestamp,
+                })),
             };
         } catch (err) {
             console.error('[API] getOverview failed:', err);

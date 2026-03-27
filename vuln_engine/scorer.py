@@ -9,6 +9,9 @@ def calculate_risk(findings):
     total_score = 0
 
     for f in findings:
+        # Defensive: ensure f is a dict before calling .get()
+        if not isinstance(f, dict):
+            continue
         risk = f.get("risk", "Low")
         total_score += score_map.get(risk, 1)
 
