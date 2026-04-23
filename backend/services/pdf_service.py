@@ -11,6 +11,7 @@ from typing import Dict, Any, List
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 )
+from reportlab.graphics.shapes import Drawing, Rect, String
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from reportlab.lib import colors
@@ -113,37 +114,98 @@ def _generate_recommendations_os_inspection(findings: List[Dict]) -> List[str]:
     return recs
 
 
-def _create_header_elements(styles, scan_data: Dict) -> List:
-    """Create the header section of the PDF."""
+def _create_risk_chart(dist_dict: Dict) -> Drawing:
+    """Draws a horizontal colored bar chart for risk distribution."""
+    colors_map = {
+        "Critical": colors.HexColor("#DC2626"),
+        "High": colors.HexColor("#EA580C"),
+        "Medium": colors.HexColor("#CA8A04"),
+        "Low": colors.HexColor("#16A34A"),
+    }
+    
+    labels = ["Critical", "High", "Medium", "Low"]
+    values = [dist_dict.get(k, 0) for k in labels]
+    max_val = max(values) if values else 0
+    
+    d = Drawing(6*inch, 1.5*inch)
+    y_pos = 1.2*inch
+    
+    for label, val in zip(labels, values):
+        d.add(String(0, y_pos+3, f"{label} ({val})", fontName="Helvetica-Bold", fontSize=10, fillColor=colors.HexColor("#334155")))
+        bar_width = (val / max_val) * 4 * inch if max_val > 0 else 0
+        if val > 0 and bar_width < 0.1*inch:
+            bar_width = 0.1*inch
+        
+        color = colors_map.get(label, colors.grey)
+        d.add(Rect(1.2*inch, y_pos, bar_width, 14, fillColor=color, strokeColor=None))
+        y_pos -= 0.35 * inch
+        
+    return d
+
+
+def _create_cover_page(styles, scan_data: Dict) -> List:
+    """Create a professional cover page for the PDF."""
     elements = []
+    
+    # Push content down
+    elements.append(Spacer(1, 1.5*inch))
     
     # Title
     title_style = ParagraphStyle(
-        'CustomTitle',
+        'CoverTitle',
         parent=styles['Heading1'],
-        fontSize=24,
-        textColor=colors.HexColor("#1E293B"),
-        spaceAfter=6,
-        alignment=TA_CENTER
+        fontSize=36,
+        leading=42,
+        textColor=colors.HexColor("#0F172A"),
+        spaceAfter=15,
+        alignment=TA_CENTER,
+        fontName="Helvetica-Bold"
     )
-    elements.append(Paragraph("Security Scan Report", title_style))
-    elements.append(Spacer(1, 0.1*inch))
+    elements.append(Paragraph("Security Assessment Report", title_style))
     
-    # Subtitle with scan type
+    # Subtitle
     scan_type = scan_data.get("scan_type", "Unknown")
-    scan_label = "Port Scan Analysis" if scan_type == "port_scan" else "OS Security Inspection"
+    scan_label = "Network Port Scan" if scan_type == "port_scan" else "OS Security Inspection"
     
     subtitle_style = ParagraphStyle(
-        'Subtitle',
+        'CoverSubtitle',
         parent=styles['Normal'],
-        fontSize=14,
-        textColor=colors.HexColor("#64748B"),
+        fontSize=18,
+        textColor=colors.HexColor("#475569"),
+        alignment=TA_CENTER,
+        spaceAfter=40,
+    )
+    elements.append(Paragraph(f"— {scan_label} —", subtitle_style))
+    elements.append(Spacer(1, 0.5*inch))
+    
+    # Risk computation for cover
+    result = scan_data.get("result", {})
+    summary = result.get("summary", {})
+    if scan_type == "port_scan":
+        risk_level = _get_risk_level(summary.get("risk_score", 0.0))
+    else:
+        critical = summary.get("critical", 0)
+        high = summary.get("high", 0)
+        medium = summary.get("medium", 0)
+        if critical > 0 or high > 3: risk_level = "HIGH"
+        elif high > 0 or medium > 3: risk_level = "MEDIUM"
+        else: risk_level = "LOW"
+    
+    risk_color = _get_risk_color(risk_level)
+    
+    # Big Risk Box
+    grade_style = ParagraphStyle(
+        'GradeBoxText',
+        parent=styles['Normal'],
+        fontSize=24,
+        textColor=risk_color,
+        fontName="Helvetica-Bold",
         alignment=TA_CENTER
     )
-    elements.append(Paragraph(scan_label, subtitle_style))
-    elements.append(Spacer(1, 0.3*inch))
+    elements.append(Paragraph(f"OVERALL RISK: {risk_level}", grade_style))
+    elements.append(Spacer(1, 2.0*inch))
     
-    # Metadata box
+    # Metadata Box at the bottom
     target = scan_data.get("target", "Unknown")
     timestamp = _format_timestamp(scan_data.get("timestamp", "Unknown"))
     scan_id = scan_data.get("scan_id", "Unknown")[:8]
@@ -151,27 +213,26 @@ def _create_header_elements(styles, scan_data: Dict) -> List:
     meta_data = [
         ["Target System:", target],
         ["Scan Date:", timestamp],
-        ["Report ID:", f"SCAN-{scan_id.upper()}"],
+        ["Report Reference:", f"SCAN-{scan_id.upper()}"],
     ]
     
-    meta_table = Table(meta_data, colWidths=[2*inch, 4*inch])
+    meta_table = Table(meta_data, colWidths=[2.5*inch, 3.5*inch])
     meta_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (0, -1), colors.HexColor("#F1F5F9")),
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
         ('TEXTCOLOR', (0, 0), (-1, -1), colors.HexColor("#334155")),
-        ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+        ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
         ('ALIGN', (1, 0), (1, -1), 'LEFT'),
         ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
         ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
-        ('FONTSIZE', (0, 0), (-1, -1), 11),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
+        ('FONTSIZE', (0, 0), (-1, -1), 12),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('TOPPADDING', (0, 0), (-1, -1), 8),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-        ('LEFTPADDING', (0, 0), (-1, -1), 12),
+        ('TOPPADDING', (0, 0), (-1, -1), 12),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
     ]))
     
     elements.append(meta_table)
-    elements.append(Spacer(1, 0.4*inch))
+    elements.append(PageBreak())
     
     return elements
 
@@ -249,6 +310,10 @@ def _create_risk_table_port_scan(elements, styles, result: Dict):
     summary = result.get("summary", {})
     dist = summary.get("risk_distribution", {})
     
+    # Add Visual Chart
+    elements.append(_create_risk_chart(dist))
+    elements.append(Spacer(1, 0.2*inch))
+    
     data = [
         ["Severity", "Count", "Indicator"],
         ["Critical", str(dist.get("Critical", 0)), "🔴"],
@@ -283,6 +348,16 @@ def _create_risk_table_os_inspection(elements, styles, result: Dict):
     elements.append(Spacer(1, 0.1*inch))
     
     summary = result.get("summary", {})
+    dist = {
+        "Critical": summary.get("critical", 0),
+        "High": summary.get("high", 0),
+        "Medium": summary.get("medium", 0),
+        "Low": summary.get("low", 0),
+    }
+    
+    # Add Visual Chart
+    elements.append(_create_risk_chart(dist))
+    elements.append(Spacer(1, 0.2*inch))
     
     data = [
         ["Severity", "Count", "Status"],
@@ -471,8 +546,8 @@ def generate_pdf(scan_data: Dict) -> str:
     # Build elements
     elements = []
     
-    # Header
-    elements.extend(_create_header_elements(styles, scan_data))
+    # Cover Page
+    elements.extend(_create_cover_page(styles, scan_data))
     
     # Get result data
     result = scan_data.get("result", {})
