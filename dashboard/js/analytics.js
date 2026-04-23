@@ -245,8 +245,8 @@ function _renderPortModal(item) {
                     <span class="meta-chip">Risk: ${UI.getRiskBadge(item.risk || 'Low')}</span>
                 </div>
             </div>
-            <div class="exposure-summary-box" style="margin-bottom:20px">
-                <p><strong>Note:</strong> ${escapeHtml(item.note || 'N/A')}</p>
+            <div class="exposure-summary-box" style="margin-bottom:20px; display: flex; flex-direction: column; gap: 10px;">
+                <p style="margin:0; color: #e2e8f0; line-height: 1.5;"><strong>Note:</strong> ${escapeHtml(item.note || 'N/A')}</p>
             </div>
     `;
 
@@ -281,11 +281,53 @@ function _renderOsModal(item) {
                     <span class="meta-chip">Status: ${UI.getStatusBadge(item.status || 'unknown')}</span>
                 </div>
             </div>
-            <div class="exposure-summary-box" style="margin-bottom:20px">
-                <p><strong>Summary:</strong> ${escapeHtml(item.analysis?.summary || 'N/A')}</p>
-                <p style="margin-top:8px"><strong>Logic:</strong> ${escapeHtml(item.analysis?.logic || 'N/A')}</p>
+            <div class="exposure-summary-box" style="margin-bottom:20px; display: flex; flex-direction: column; gap: 10px;">
+                <p style="margin:0; color: #e2e8f0; line-height: 1.5;"><strong>Summary:</strong> ${escapeHtml(item.analysis?.summary || 'N/A')}</p>
+                <p style="margin:0; color: #e2e8f0; line-height: 1.5;"><strong>Logic:</strong> ${escapeHtml(item.analysis?.logic || 'N/A')}</p>
             </div>
     `;
+
+    // MITRE ATT&CK
+    if (item.mitre && item.mitre.id) {
+        let mitreUrlId = item.mitre.id;
+        if (mitreUrlId.includes('.')) {
+            const parts = mitreUrlId.split('.');
+            mitreUrlId = parts[0] + '/' + parts[1];
+        }
+        html += `
+        <div class="result-section">
+            <h4 class="result-sub-header">🎯 MITRE ATT&CK Mapping</h4>
+            <div class="exposure-summary-box" style="margin-bottom:20px; border-left: 4px solid #8e44ad; background-color: rgba(142, 68, 173, 0.05); display: flex; flex-direction: column; gap: 8px; padding: 12px 16px;">
+                <div style="display: flex; gap: 10px;">
+                    <span style="min-width: 80px; font-weight: 600; color: #a8b2c1;">ID:</span> 
+                    <a href="https://attack.mitre.org/techniques/${escapeHtml(mitreUrlId)}" target="_blank" style="color:#a855f7; text-decoration:underline;">${escapeHtml(item.mitre.id)}</a>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <span style="min-width: 80px; font-weight: 600; color: #a8b2c1;">Tactic:</span> 
+                    <span style="color: #e2e8f0;">${escapeHtml(item.mitre.tactic)}</span>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <span style="min-width: 80px; font-weight: 600; color: #a8b2c1;">Technique:</span> 
+                    <span style="color: #e2e8f0;">${escapeHtml(item.mitre.technique)}</span>
+                </div>
+            </div>
+        </div>`;
+    }
+
+    // Remediation Insights
+    if (item.remediation && item.remediation.advice) {
+        html += `
+        <div class="result-section">
+            <h4 class="result-sub-header">💡 Remediation Insights</h4>
+            <div class="exposure-summary-box" style="margin-bottom:20px; border-left: 4px solid #10b981; background-color: rgba(16, 185, 129, 0.05); padding: 12px 16px;">
+                <p style="color: #e2e8f0; line-height: 1.5; margin-bottom: 12px;"><strong>Advice:</strong> ${escapeHtml(item.remediation.advice)}</p>
+                <div style="background-color: #0d1117; padding: 10px; border-radius: 4px; border: 1px solid #30363d;">
+                    <p style="font-size: 11px; color: #8b949e; margin-bottom: 5px; text-transform: uppercase;">PowerShell Fix Script</p>
+                    <code style="color: #10b981; font-family: 'JetBrains Mono', monospace; font-size: 13px;">${escapeHtml(item.remediation.script || 'Manual intervention required.')}</code>
+                </div>
+            </div>
+        </div>`;
+    }
 
     // NVD CVEs
     const nvd = Array.isArray(item.nvd) ? item.nvd : [];

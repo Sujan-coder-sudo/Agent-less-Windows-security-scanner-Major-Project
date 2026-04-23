@@ -13,6 +13,7 @@ import platform
 import requests
 import ctypes
 import re
+import asyncio
 from typing import List, Dict, Any
 from datetime import datetime
 import uuid
@@ -22,7 +23,6 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.pagesizes import A4
 from dotenv import load_dotenv
 load_dotenv()
-
 
 # -----------------------------
 # CONFIGURATION
@@ -59,25 +59,21 @@ COMMON_PORT_MAP = {
 }
 
 def is_admin() -> bool:
-    """Checks if the script is running with administrator privileges."""
     try:
         return ctypes.windll.shell32.IsUserAnAdmin() != 0
     except Exception:
         return False
 
 def relaunch_as_admin():
-    """Relaunches the script with administrator privileges and exits."""
     executable = sys.executable
     args = " ".join([f'"{arg}"' for arg in sys.argv])
     ctypes.windll.shell32.ShellExecuteW(None, "runas", executable, args, None, 1)
     sys.exit(0)
 
 def extract_kbs(output: str) -> List[str]:
-    """Extract KB numbers like KB5021234 from command output."""
     return list(set(re.findall(r"(KB\d+)", output, re.IGNORECASE)))
 
 def parse_software(output: str) -> List[str]:
-    """Extract top installed software names from command output."""
     lines = output.splitlines()
     softwares = []
     for line in lines:
@@ -88,7 +84,6 @@ def parse_software(output: str) -> List[str]:
     return softwares
 
 def extract_services(output: str) -> List[str]:
-    """Extract running service names from command output."""
     lines = output.splitlines()
     services = []
     for line in lines:
@@ -97,23 +92,37 @@ def extract_services(output: str) -> List[str]:
             services.append(parts[1])
     return services
 
-def run_powershell(command: str) -> str:
-    """Runs PowerShell command safely (inspection-only)."""
+async def run_powershell(command: str) -> str:
+    """Runs PowerShell command safely (inspection-only) - ASYNC."""
     try:
-        completed = subprocess.run(
-            ["powershell", "-ExecutionPolicy", "Bypass", "-NoProfile", "-Command", command],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=60
+        process = await asyncio.create_subprocess_exec(
+            "powershell", "-ExecutionPolicy", "Bypass", "-NoProfile", "-Command", command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
         )
-        return completed.stdout.strip() or completed.stderr.strip()
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30)
+        
+        try:
+            out_str = stdout.decode('utf-8', errors='replace').strip()
+        except Exception:
+            out_str = str(stdout)
+            
+        try:
+            err_str = stderr.decode('utf-8', errors='replace').strip()
+        except Exception:
+            err_str = str(stderr)
+            
+        return out_str or err_str
+    except asyncio.TimeoutError:
+        try:
+            process.kill()
+        except Exception:
+            pass
+        return "ERROR: Command timed out after 30 seconds."
     except Exception as e:
         return f"ERROR: {str(e)}"
 
 def calculate_risk(nvd):
-    """Calculates risk dynamically from nvd output severities."""
     if not isinstance(nvd, list) or not nvd:
         return "LOW"
     
@@ -125,9 +134,9 @@ def calculate_risk(nvd):
         
     return "MEDIUM"
 
-def query_nvd(keyword: str, limit: int = 5) -> List[Dict[str, Any]]:
+async def query_nvd(keyword: str, limit: int = 5) -> List[Dict[str, Any]]:
     if not NVD_API_KEY:
-        return [{"error": "NVD_API_KEY not set"}]
+        return []
 
     params = {
         "keywordSearch": keyword,
@@ -135,7 +144,7 @@ def query_nvd(keyword: str, limit: int = 5) -> List[Dict[str, Any]]:
     }
 
     try:
-        r = requests.get(NVD_URL, headers=REQUEST_HEADERS, params=params, timeout=30)
+        r = await asyncio.to_thread(requests.get, NVD_URL, headers=REQUEST_HEADERS, params=params, timeout=10)
         r.raise_for_status()
         data = r.json()
         cves = []
@@ -145,7 +154,7 @@ def query_nvd(keyword: str, limit: int = 5) -> List[Dict[str, Any]]:
                 cvss_data = cve.get("metrics", {}).get("cvssMetricV31", [{}])[0].get("cvssData", {})
                 severity = cvss_data.get("baseSeverity", "").upper()
                 
-                if severity in ["HIGH", "CRITICAL"]:
+                if severity in ["HIGH", "CRITICAL", "MEDIUM"]:
                     cve_id = cve.get("id", "Unknown")
                     desc = cve.get("descriptions", [{}])[0].get("value", "No description")
                     cves.append({
@@ -157,15 +166,15 @@ def query_nvd(keyword: str, limit: int = 5) -> List[Dict[str, Any]]:
                 continue
         return cves
     except Exception as e:
-        return [{"error": str(e)}]
+        return []
 
 # -----------------------------
 # SCAN MODULES
 # -----------------------------
 
-def scan_os_profiling():
+async def scan_os_profiling():
     cmd = 'systeminfo'
-    output = run_powershell(cmd)
+    output = await run_powershell(cmd)
     
     nvd_query = "Windows vulnerability"
     extracted_name = None
@@ -190,19 +199,22 @@ def scan_os_profiling():
         "os_name": extracted_name,
         "os_version": extracted_version
     }
+    
+    mitre = {"id": "T1082", "tactic": "Discovery", "technique": "System Information Discovery"}
+    remediation = {
+        "advice": "Ensure Windows is updated to the latest cumulative release.",
+        "script": "Install-Module -Name PSWindowsUpdate -Force; Get-WindowsUpdate -Install -AcceptAll -IgnoreReboot"
+    }
 
     return _wrap_result(
-        "OS Profiling",
-        cmd,
-        output,
+        "OS Profiling", cmd, output,
         "OS version/build determines kernel exploit exposure.",
-        query_nvd(nvd_query),
-        extra
+        await query_nvd(nvd_query), mitre=mitre, remediation=remediation, extra=extra
     )
 
-def scan_hotfix_audit():
+async def scan_hotfix_audit():
     cmd = 'Get-HotFix; (New-Object -ComObject Microsoft.Update.Session).CreateUpdateSearcher().Search("IsInstalled=0").Updates'
-    output = run_powershell(cmd)
+    output = await run_powershell(cmd)
     
     kbs = extract_kbs(output)
     query_str = "Windows Patch Tuesday Remote Code Execution"
@@ -213,18 +225,21 @@ def scan_hotfix_audit():
         "missing_kbs": kbs[:10]
     }
         
+    mitre = {"id": "T1203", "tactic": "Execution", "technique": "Exploitation for Client Execution"}
+    remediation = {
+        "advice": "Apply missing Patch Tuesday KBs to mitigate RCE vulnerabilities.",
+        "script": "Install-Module -Name PSWindowsUpdate -Force; Get-WindowsUpdate -Install -AcceptAll"
+    }
+
     return _wrap_result(
-        "Hotfix Audit",
-        cmd,
-        output,
+        "Hotfix Audit", cmd, output,
         "Missing KBs correlate with Patch Tuesday RCE/LPE vulnerabilities.",
-        query_nvd(query_str),
-        extra
+        await query_nvd(query_str), mitre=mitre, remediation=remediation, extra=extra
     )
 
-def scan_software_inventory():
+async def scan_software_inventory():
     cmd = 'Get-Package; Get-WmiObject -Class Win32_Product; Get-Service | Where-Object {$_.Name -like "Sysmon"}'
-    output = run_powershell(cmd)
+    output = await run_powershell(cmd)
     
     softwares = parse_software(output)
     query_str = "Windows third-party software vulnerability"
@@ -235,18 +250,21 @@ def scan_software_inventory():
         "top_software": softwares[:5]
     }
         
+    mitre = {"id": "T1518", "tactic": "Discovery", "technique": "Software Discovery"}
+    remediation = {
+        "advice": "Update or uninstall outdated third-party applications running on the system.",
+        "script": "winget upgrade --all -h"
+    }
+
     return _wrap_result(
-        "Software Inventory",
-        cmd,
-        output,
+        "Software Inventory", cmd, output,
         "Outdated or unmanaged software expands exploit surface.",
-        query_nvd(query_str),
-        extra
+        await query_nvd(query_str), mitre=mitre, remediation=remediation, extra=extra
     )
 
-def scan_service_status():
+async def scan_service_status():
     cmd = 'Get-Service | Where-Object {$_.Status -eq "Running"}; Get-CimInstance -Namespace root/subscription -ClassName __EventConsumer'
-    output = run_powershell(cmd)
+    output = await run_powershell(cmd)
     
     services = extract_services(output)
     query_str = "Windows service privilege escalation"
@@ -257,18 +275,21 @@ def scan_service_status():
         "running_services": services[:10]
     }
         
+    mitre = {"id": "T1543.003", "tactic": "Privilege Escalation", "technique": "Create or Modify System Process: Windows Service"}
+    remediation = {
+        "advice": "Disable unnecessary high-privilege services and review WMI subscriptions.",
+        "script": "Stop-Service -Name <SuspiciousService> -Force; Set-Service -Name <SuspiciousService> -StartupType Disabled"
+    }
+
     return _wrap_result(
-        "Service Status",
-        cmd,
-        output,
+        "Service Status", cmd, output,
         "Running services and WMI consumers are common persistence vectors.",
-        query_nvd(query_str),
-        extra
+        await query_nvd(query_str), mitre=mitre, remediation=remediation, extra=extra
     )
 
-def scan_edr_health():
+async def scan_edr_health():
     cmd = 'Get-MpComputerStatus; Confirm-SecureBootUEFI'
-    output = run_powershell(cmd)
+    output = await run_powershell(cmd)
     
     query_str = "Windows Defender evasion"
     if "False" in output or "Provider load failure" in output or "Cmdlet not supported" in output:
@@ -278,38 +299,44 @@ def scan_edr_health():
         "edr_disabled_or_weak": ("False" in output) or ("Provider load failure" in output)
     }
         
+    mitre = {"id": "T1562.001", "tactic": "Defense Evasion", "technique": "Impair Defenses: Disable or Modify Tools"}
+    remediation = {
+        "advice": "Re-enable Windows Defender Real-Time Protection and Signature Updates.",
+        "script": "Set-MpPreference -DisableRealtimeMonitoring $false; Update-MpSignature"
+    }
+
     return _wrap_result(
-        "EDR / AV Health",
-        cmd,
-        output,
+        "EDR / AV Health", cmd, output,
         "Weak EDR or Secure Boot off enables BYOVD and bootkits.",
-        query_nvd(query_str),
-        extra
+        await query_nvd(query_str), mitre=mitre, remediation=remediation, extra=extra
     )
 
-def scan_audit_policy():
+async def scan_audit_policy():
     cmd = 'auditpol /get /category:*; Get-EventLog -List'
-    output = run_powershell(cmd)
+    output = await run_powershell(cmd)
     
     extra = {
         "logging_status": "Checked"
     }
     
+    mitre = {"id": "T1562.002", "tactic": "Defense Evasion", "technique": "Impair Defenses: Disable Windows Event Logging"}
+    remediation = {
+        "advice": "Increase audit logging for Process Creation, Logons, and Object Access.",
+        "script": "auditpol /set /category:'Logon/Logoff' /success:enable /failure:enable; auditpol /set /category:'Detailed Tracking' /success:enable"
+    }
+
     return _wrap_result(
-        "Audit Policy",
-        cmd,
-        output,
+        "Audit Policy", cmd, output,
         "Low logging creates detection gaps.",
-        "No direct CVE - maps to MITRE ATT&CK",
-        extra
+        "No direct CVE - maps to MITRE ATT&CK", mitre=mitre, remediation=remediation, extra=extra
     )
 
-def scan_firewall():
+async def scan_firewall():
     fw_cmd = 'Get-NetFirewallPortFilter | Where-Object {$_.Protocol -eq "TCP"}'
     listen_cmd = 'Get-NetTCPConnection -State Listen'
     
-    fw_output = run_powershell(fw_cmd)
-    listen_output = run_powershell(listen_cmd)
+    fw_output = await run_powershell(fw_cmd)
+    listen_output = await run_powershell(listen_cmd)
     
     try:
         fw_ports = set(re.findall(r"\b\d{2,5}\b", str(fw_output)))
@@ -325,7 +352,7 @@ def scan_firewall():
         port = str(exposed_ports[0])
         service = COMMON_PORT_MAP.get(port, "Windows service")
         query_str = f"{service} remote code execution"
-        nvd_result = query_nvd(query_str)
+        nvd_result = await query_nvd(query_str)
     else:
         nvd_result = "Windows firewall misconfiguration"
         
@@ -338,35 +365,41 @@ def scan_firewall():
         "service": service
     }
     
+    mitre = {"id": "T1562.004", "tactic": "Defense Evasion", "technique": "Impair Defenses: Disable or Modify System Firewall"}
+    remediation = {
+        "advice": "Restrict inbound firewall traffic only to necessary management ports.",
+        "script": "Set-NetFirewallProfile -Profile Domain,Public,Private -DefaultInboundAction Block"
+    }
+
     return _wrap_result(
-        "Firewall Rules",
-        cmd_str,
-        combined_output,
+        "Firewall Rules", cmd_str, combined_output,
         "Open ports increase attack surface.",
-        nvd_result,
-        extra
+        nvd_result, mitre=mitre, remediation=remediation, extra=extra
     )
 
-def scan_neighbor_discovery():
+async def scan_neighbor_discovery():
     cmd = 'Get-NetNeighbor; Get-NetRoute'
-    output = run_powershell(cmd)
+    output = await run_powershell(cmd)
     
     extra = {
         "network_exposure": "Checked"
     }
     
+    mitre = {"id": "T1557", "tactic": "Credential Access", "technique": "Adversary-in-the-Middle"}
+    remediation = {
+        "advice": "Disable IPv6 routing if not actively utilized in the corporate environment to avoid MitM spoofing.",
+        "script": "Disable-NetAdapterBinding -Name * -ComponentID ms_tcpip6"
+    }
+
     return _wrap_result(
-        "Neighbor Discovery",
-        cmd,
-        output,
+        "Neighbor Discovery", cmd, output,
         "ARP/IPv6 exposure enables MitM attacks.",
-        query_nvd("IPv6 Neighbor Discovery vulnerability"),
-        extra
+        await query_nvd("IPv6 Neighbor Discovery vulnerability"), mitre=mitre, remediation=remediation, extra=extra
     )
 
-def scan_interface_stats():
+async def scan_interface_stats():
     cmd = 'Get-NetAdapterStatistics; Get-DnsClientServerAddress'
-    output = run_powershell(cmd)
+    output = await run_powershell(cmd)
     
     query_str = "Windows DNS Client vulnerability"
     if "ServerAddresses" in output or re.search(r"\d+\.\d+\.\d+\.\d+", output):
@@ -376,18 +409,21 @@ def scan_interface_stats():
         "interface_stats": "Checked"
     }
         
+    mitre = {"id": "T1557.001", "tactic": "Credential Access", "technique": "LLMNR/NBT-NS Poisoning and SMB Relay"}
+    remediation = {
+        "advice": "Set hardcoded static DNS resolvers to prevent DNS hijacking.",
+        "script": 'Set-DnsClientServerAddress -InterfaceAlias * -ServerAddresses "1.1.1.1","8.8.8.8"'
+    }
+
     return _wrap_result(
-        "Interface Statistics",
-        cmd,
-        output,
+        "Interface Statistics", cmd, output,
         "DNS hijacking can redirect traffic to malicious resolvers.",
-        query_nvd(query_str),
-        extra
+        await query_nvd(query_str), mitre=mitre, remediation=remediation, extra=extra
     )
 
-def scan_infrastructure_link():
+async def scan_infrastructure_link():
     cmd = 'Get-ADComputer -Identity $env:COMPUTERNAME -Properties *; (Get-CimInstance Win32_BIOS).Version'
-    output = run_powershell(cmd)
+    output = await run_powershell(cmd)
     
     query_str = "UEFI firmware vulnerability"
     bios_ver = None
@@ -403,35 +439,41 @@ def scan_infrastructure_link():
         "bios_version": bios_ver
     }
         
+    mitre = {"id": "T1542.001", "tactic": "Persistence", "technique": "Boot or Logon Autostart Execution: System Firmware"}
+    remediation = {
+        "advice": "Enforce Secure Boot in UEFI firmware to block unauthorized bootkits.",
+        "script": "Confirm-SecureBootUEFI # Must be enabled manually in physical BIOS menu"
+    }
+
     return _wrap_result(
-        "Infrastructure Link",
-        cmd,
-        output,
+        "Infrastructure Link", cmd, output,
         "Outdated BIOS/UEFI firmware enables bootkits.",
-        query_nvd(query_str),
-        extra
+        await query_nvd(query_str), mitre=mitre, remediation=remediation, extra=extra
     )
 
-def scan_persistence():
+async def scan_persistence():
     cmd = 'Get-ScheduledTask; Get-ItemProperty HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'
-    output = run_powershell(cmd)
+    output = await run_powershell(cmd)
     
     extra = {
         "persistence_mechanisms": "Checked"
     }
     
+    mitre = {"id": "T1547.001", "tactic": "Persistence", "technique": "Boot or Logon Autostart Execution: Registry Run Keys / Startup Folder"}
+    remediation = {
+        "advice": "Remove unrecognized entries from user and system Run keys.",
+        "script": "Remove-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' -Name '<SuspiciousEntry>'"
+    }
+
     return _wrap_result(
-        "Persistence Mechanisms",
-        cmd,
-        output,
+        "Persistence Mechanisms", cmd, output,
         "Startup tasks and run keys allow malware persistence.",
-        "No direct CVE - maps to MITRE ATT&CK",
-        extra
+        "No direct CVE - maps to MITRE ATT&CK", mitre=mitre, remediation=remediation, extra=extra
     )
 
-def scan_users():
+async def scan_users():
     cmd = 'Get-LocalGroupMember -Group "Administrators"'
-    output = run_powershell(cmd)
+    output = await run_powershell(cmd)
     
     query_str = "Windows privilege escalation"
     admin_count = 0
@@ -447,23 +489,25 @@ def scan_users():
         "admin_count": admin_count
     }
         
+    mitre = {"id": "T1078.003", "tactic": "Persistence", "technique": "Valid Accounts: Local Accounts"}
+    remediation = {
+        "advice": "Remove unauthorized accounts from the local Administrators group.",
+        "script": "Remove-LocalGroupMember -Group 'Administrators' -Member '<UnauthorizedUser>'"
+    }
+
     return _wrap_result(
-        "User / Group Audit",
-        cmd,
-        output,
+        "User / Group Audit", cmd, output,
         "Admin sprawl enables privilege escalation chaining.",
-        query_nvd(query_str),
-        extra
+        await query_nvd(query_str), mitre=mitre, remediation=remediation, extra=extra
     )
 
-def scan_connections():
+async def scan_connections():
     cmd = 'Get-NetTCPConnection -State Listen'
-    output = run_powershell(cmd)
+    output = await run_powershell(cmd)
     
     query_str = "Windows remote service RCE"
     ports = []
     try:
-        # Regex update specific to connections explicitly requested
         ports = re.findall(r":(\d+)\s+Listen", output)
         if ports:
             query_str = f"Windows remote service RCE port {ports[0]}"
@@ -474,16 +518,19 @@ def scan_connections():
         "listening_ports": ports[:10]
     }
         
+    mitre = {"id": "T1049", "tactic": "Discovery", "technique": "System Network Connections Discovery"}
+    remediation = {
+        "advice": "Terminate unexpected TCP listeners using PowerShell.",
+        "script": "Get-Process -Id (Get-NetTCPConnection -LocalPort <PortNumber>).OwningProcess | Stop-Process -Force"
+    }
+
     return _wrap_result(
-        "Active Connections",
-        cmd,
-        output,
+        "Active Connections", cmd, output,
         "Unexpected listeners may indicate backdoors.",
-        query_nvd(query_str),
-        extra
+        await query_nvd(query_str), mitre=mitre, remediation=remediation, extra=extra
     )
 
-def _wrap_result(category, cmd, output, logic, nvd, extra=None):
+def _wrap_result(category, cmd, output, logic, nvd, mitre=None, remediation=None, extra=None):
     return {
         "category": category,
         "status": "success" if "ERROR" not in str(output) else "failed",
@@ -498,6 +545,8 @@ def _wrap_result(category, cmd, output, logic, nvd, extra=None):
             "summary": f"{category} inspection completed.",
             "logic": logic
         },
+        "mitre": mitre or {},
+        "remediation": remediation or {},
         "nvd": nvd if isinstance(nvd, list) else []
     }
 
@@ -554,7 +603,7 @@ def export_pdf(report):
     for item in report:
         story.append(Paragraph(f"<b>Category:</b> {item.get('category')}", styles["Heading2"]))
         
-        # Access properties using the new nested output schema safely
+        # Access properties using nested output schema safely
         cmd_text = item.get("command", {}).get("executed", "")
         summary_text = item.get("analysis", {}).get("summary", "")
         logic_text = item.get("analysis", {}).get("logic", "")
@@ -573,12 +622,15 @@ def export_pdf(report):
 # MAIN
 # -----------------------------
 
-def main():
+async def main_async():
     if not is_admin():
         print("Not running as administrator. Relaunching...")
         relaunch_as_admin()
 
-    report = [
+    start_time = datetime.now()
+
+    # Run all 13 modules concurrently
+    report = await asyncio.gather(
         scan_os_profiling(),
         scan_hotfix_audit(),
         scan_software_inventory(),
@@ -592,22 +644,30 @@ def main():
         scan_persistence(),
         scan_users(),
         scan_connections()
-    ]
+    )
+
+    end_time = datetime.now()
+    duration = (end_time - start_time).total_seconds()
 
     metadata = generate_scan_metadata()
 
     final_output = {
         "scan_info": metadata,
         "summary": build_summary(report),
-        "results": report
+        "results": list(report)
     }
 
     json_path = export_json(final_output)
-    pdf_path = export_pdf(report)
+    pdf_path = export_pdf(list(report))
 
-    print("Report generated")
+    print(f"Report generated in {duration:.2f} seconds")
     print(f"JSON: {json_path}")
     print(f"PDF: {pdf_path}")
+
+def main():
+    if sys.platform == 'win32':
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    asyncio.run(main_async())
 
 if __name__ == "__main__":
     main()

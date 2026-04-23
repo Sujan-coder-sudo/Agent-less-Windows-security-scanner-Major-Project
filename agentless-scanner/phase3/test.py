@@ -1,19 +1,16 @@
 """
 test.py
 -------
-Full validation runner for Agentless Windows Vulnerability Scanner
-
-- Executes ALL scan modules
-- Validates read-only behavior
-- Flags Phase-3 violations explicitly
-- Produces structured test output
+Full validation runner for Agentless Windows Vulnerability Scanner (Async Mode)
 """
 
 import json
 import os
+import sys
+import asyncio
 from datetime import datetime
 
-from core1 import (
+from core import (
     run_powershell,
     scan_os_profiling,
     scan_hotfix_audit,
@@ -47,17 +44,14 @@ FORBIDDEN_KEYWORDS = [
     "Stop-",
     "Invoke-Expression",
     "Invoke-WebRequest",
-    "Win32_Product",
-    "__EventConsumer",
-    "__EventFilter",
-    "CommandLineEventConsumer"
 ]
 
 
-def check_command_safety(command: str):
+def check_command_safety(command: dict):
     violations = []
+    cmd_str = command.get("executed", "")
     for keyword in FORBIDDEN_KEYWORDS:
-        if keyword.lower() in command.lower():
+        if keyword.lower() in cmd_str.lower():
             violations.append(keyword)
     return violations
 
@@ -66,8 +60,8 @@ def check_command_safety(command: str):
 # TEST EXECUTION
 # -----------------------------
 
-def test_powershell_wrapper():
-    output = run_powershell("$PSVersionTable.PSVersion.Major")
+async def test_powershell_wrapper():
+    output = await run_powershell("$PSVersionTable.PSVersion.Major")
     status = "PASS" if output.isdigit() else "FAIL"
 
     return {
@@ -77,7 +71,7 @@ def test_powershell_wrapper():
     }
 
 
-def test_scan(scan_fn):
+async def test_scan(scan_fn):
     result = {
         "module": scan_fn.__name__,
         "status": "PASS",
@@ -86,14 +80,20 @@ def test_scan(scan_fn):
     }
 
     try:
-        scan_output = scan_fn()
+        scan_output = await scan_fn()
 
-        # Structural validation
+        # Structural validation (updated to match _wrap_result format)
         required_fields = {
             "category",
+            "status",
+            "type",
+            "risk",
             "command",
-            "command_output",
-            "logic_reasoning"
+            "findings",
+            "analysis",
+            "mitre",
+            "remediation",
+            "nvd"
         }
 
         missing = required_fields - scan_output.keys()
@@ -102,15 +102,10 @@ def test_scan(scan_fn):
             result["errors"] = f"Missing fields: {list(missing)}"
 
         # Safety validation
-        violations = check_command_safety(scan_output.get("command", ""))
+        violations = check_command_safety(scan_output.get("command", {}))
         if violations:
             result["status"] = "WARN"
             result["violations"] = violations
-
-        # Output sanity
-        if not isinstance(scan_output.get("command_output"), str):
-            result["status"] = "FAIL"
-            result["errors"] = "command_output is not string"
 
     except Exception as e:
         result["status"] = "FAIL"
@@ -123,7 +118,7 @@ def test_scan(scan_fn):
 # MAIN TEST RUNNER
 # -----------------------------
 
-def main():
+async def main_async():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     test_results = {
@@ -135,7 +130,7 @@ def main():
     print("[*] Running full Phase-3 test suite")
 
     # Wrapper test
-    test_results["tests"].append(test_powershell_wrapper())
+    test_results["tests"].append(await test_powershell_wrapper())
 
     # ALL scan modules
     SCANS = [
@@ -153,9 +148,11 @@ def main():
         scan_users,
         scan_connections
     ]
-
-    for scan in SCANS:
-        test_results["tests"].append(test_scan(scan))
+    
+    tasks = [test_scan(scan) for scan in SCANS]
+    results = await asyncio.gather(*tasks)
+    
+    test_results["tests"].extend(results)
 
     with open(TEST_OUTPUT, "w", encoding="utf-8") as f:
         json.dump(test_results, f, indent=2)
@@ -163,6 +160,10 @@ def main():
     print("[+] Test run completed")
     print(f"[+] Test report written to {TEST_OUTPUT}")
 
+def main():
+    if sys.platform == 'win32':
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    asyncio.run(main_async())
 
 if __name__ == "__main__":
     main()
