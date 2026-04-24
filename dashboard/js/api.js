@@ -64,6 +64,31 @@ const Api = {
         }
     },
 
+    /**
+     * Wait for a scan to finish by polling its status endpoint.
+     * @param {string} scanId 
+     * @param {number} intervalMs 
+     * @param {number} maxRetries 
+     */
+    async pollScanCompletion(scanId, intervalMs = 2000, maxRetries = 150) {
+        for (let i = 0; i < maxRetries; i++) {
+            const r = await fetch(`${API_BASE}/scans/${encodeURIComponent(scanId)}/status`);
+            const response = await _handleResponse(r);
+            const status = response.data?.status;
+            
+            if (status === 'completed') {
+                return await this.getScanDetails(scanId);
+            }
+            if (status === 'failed') {
+                throw new Error(response.data?.error_message || 'Scan failed during execution');
+            }
+            
+            // Wait before next poll
+            await new Promise(resolve => setTimeout(resolve, intervalMs));
+        }
+        throw new Error('Scan timed out waiting for completion');
+    },
+
     /** GET /api/scans — full history index */
     async getScanHistory() {
         try {

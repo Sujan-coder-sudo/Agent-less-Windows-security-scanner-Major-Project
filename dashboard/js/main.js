@@ -145,9 +145,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                     throw new Error(payload.message || 'Scan returned error status');
                 }
 
+                UI.notify('Scan queued. Waiting for completion...', 'info');
+                const finalScanData = await Api.pollScanCompletion(payload.data.scan_id);
+
                 UI.notify('Port Scan completed ✓', 'success');
-                const scanData = payload.data;
-                renderPortScanResults(scanData.result || scanData, scanData);
+                renderPortScanResults(finalScanData.result || finalScanData, finalScanData);
                 document.getElementById('p2-results-panel').classList.remove('hidden');
                 await Promise.allSettled([loadOverview(), loadHistory()]);
 
@@ -166,7 +168,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     function renderPortScanResults(data, meta) {
         const panel    = document.getElementById('p2-results-panel');
         const summary  = data?.summary  || {};
-        const hosts    = data?.hosts    || [];
+        // FIXED: Use data.data (findings) instead of data.hosts (which doesn't exist)
+        const findings = data?.data     || [];
         const scanInfo = data?.scan_info || {};
         const target   = meta?.target   || scanInfo.target || 'Unknown';
 
@@ -183,12 +186,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 </div>
                 <div class="metrics-grid phase2-metrics">
                     <div class="metric-card">
-                        <div class="metric-title">Hosts Discovered</div>
-                        <div class="metric-value">${summary.total_hosts || hosts.length || 0}</div>
+                        <div class="metric-title">Total Findings</div>
+                        <div class="metric-value">${summary.total_findings || findings.length || 0}</div>
                     </div>
                     <div class="metric-card">
                         <div class="metric-title">Open Ports</div>
-                        <div class="metric-value">${summary.total_open_ports || 0}</div>
+                        <div class="metric-value">${summary.open_ports || 0}</div>
                     </div>
                     <div class="metric-card ${['CRITICAL','HIGH'].includes(summary.risk_level) ? 'alert' : ''}">
                         <div class="metric-title">Risk Level</div>
@@ -206,34 +209,50 @@ document.addEventListener('DOMContentLoaded', async () => {
             </div>
         `;
 
-        // Open ports table
-        const allPorts = [];
-        hosts.forEach(h => (h.ports || []).forEach(p => allPorts.push({ host: h.ip, ...p })));
-
-        if (allPorts.length > 0) {
+        // Port findings table (using findings from vuln_engine)
+        if (findings.length > 0) {
+            const openFindings = findings.filter(f => f.state === 'open' || f.state === 'filtered');
             html += `
                 <div class="result-section">
-                    <h4 class="result-sub-header">🔌 Open Ports (${allPorts.length} total)</h4>
+                    <h4 class="result-sub-header">🔌 Port Findings (${openFindings.length} open/filtered)</h4>
                     <div class="table-container">
                         <table class="data-table">
-                            <thead><tr><th>Host</th><th>Port</th><th>Service</th><th>State</th><th>Version</th><th>Risk</th></tr></thead>
+                            <thead><tr><th>Port</th><th>Service</th><th>State</th><th>Version</th><th>Issue</th><th>Risk</th></tr></thead>
                             <tbody>
-                                ${allPorts.map(p => `
+                                ${findings.map(f => `
                                     <tr>
-                                        <td><code>${p.host}</code></td>
-                                        <td><span class="port-number">${p.port}</span></td>
-                                        <td>${p.service || '-'}</td>
-                                        <td>${p.state || '-'}</td>
-                                        <td><code>${p.version || '-'}</code></td>
-                                        <td>${UI.getRiskBadge(p.risk_level || 'LOW')}</td>
+                                        <td><span class="port-number">${f.port || '-'}</span></td>
+                                        <td>${f.service || '-'}</td>
+                                        <td>${f.state || '-'}</td>
+                                        <td><code>${f.version || '-'}</code></td>
+                                        <td>${f.issue || '-'}</td>
+                                        <td>${UI.getRiskBadge((f.risk || 'Low').toUpperCase())}</td>
                                     </tr>`).join('')}
                             </tbody>
                         </table>
                     </div>
                 </div>
             `;
+
+            // CVE References Section
+            const findingsWithCves = findings.filter(f => f.cves && f.cves.length > 0 && !f.cves.includes("Manual verification required"));
+            if (findingsWithCves.length > 0) {
+                html += `
+                    <div class="result-section">
+                        <h4 class="result-sub-header">🛡️ CVE References</h4>
+                        <div class="cve-list">
+                            ${findingsWithCves.map(f => `
+                                <div class="cve-item">
+                                    <strong>Port ${f.port} (${f.service}):</strong>
+                                    ${f.cves.slice(0, 3).map(cve => `<span class="cve-tag">${cve}</span>`).join(' ')}
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
         } else {
-            html += `<div class="result-section"><p class="empty-state">No open ports detected on the target.</p></div>`;
+            html += `<div class="result-section"><p class="empty-state">No findings detected on the target.</p></div>`;
         }
 
         // Risk distribution
@@ -243,10 +262,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <div class="result-section">
                     <h4 class="result-sub-header">📊 Risk Distribution</h4>
                     <div class="risk-dist-grid">
-                        <div class="risk-dist-card critical"><span>${dist.CRITICAL || 0}</span><label>Critical</label></div>
-                        <div class="risk-dist-card high"><span>${dist.HIGH || 0}</span><label>High</label></div>
-                        <div class="risk-dist-card medium"><span>${dist.MEDIUM || 0}</span><label>Medium</label></div>
-                        <div class="risk-dist-card low"><span>${dist.LOW || 0}</span><label>Low</label></div>
+                        <div class="risk-dist-card critical"><span>${dist.Critical || 0}</span><label>Critical</label></div>
+                        <div class="risk-dist-card high"><span>${dist.High || 0}</span><label>High</label></div>
+                        <div class="risk-dist-card medium"><span>${dist.Medium || 0}</span><label>Medium</label></div>
+                        <div class="risk-dist-card low"><span>${dist.Low || 0}</span><label>Low</label></div>
                     </div>
                 </div>
             `;
@@ -284,9 +303,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                     throw new Error(payload.message || 'Inspection returned error status');
                 }
 
+                UI.notify('Inspection queued. Waiting for completion...', 'info');
+                const finalScanData = await Api.pollScanCompletion(payload.data.scan_id);
+
                 UI.notify('OS Inspection completed ✓', 'success');
-                const scanData = payload.data;
-                renderOsInspectionResults(scanData.result || scanData, scanData);
+                renderOsInspectionResults(finalScanData.result || finalScanData, finalScanData);
                 document.getElementById('p3-results-panel').classList.remove('hidden');
                 await Promise.allSettled([loadOverview(), loadHistory()]);
 
@@ -439,8 +460,29 @@ document.addEventListener('DOMContentLoaded', async () => {
     const btnClearHistory = document.getElementById('btn-clear-history');
     if (btnClearHistory) {
         btnClearHistory.addEventListener('click', async () => {
-            if (!confirm('This will delete all stored scan files. Continue?')) return;
-            UI.notify('Clear scan history is not implemented in this build.', 'info');
+            if (!confirm('This will permanently delete ALL scan history and findings. This action cannot be undone. Continue?')) return;
+
+            UI.setButtonLoading(btnClearHistory, true);
+            try {
+                const response = await fetch(`${API_BASE}/scans`, {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.message || 'Failed to clear history');
+                }
+
+                const result = await response.json();
+                UI.notify(`History cleared: ${result.data.scans_deleted} scans and ${result.data.findings_deleted} findings deleted.`, 'success');
+                await loadHistory();
+                await loadOverview();
+            } catch (err) {
+                showError('Failed to clear history: ' + err.message);
+            } finally {
+                UI.setButtonLoading(btnClearHistory, false);
+            }
         });
     }
 
@@ -468,7 +510,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <td><span class="target-label">${scan.target}</span></td>
                     <td><span class="phase-badge">${typeLabel}</span></td>
                     <td>${UI.formatDate(scan.timestamp)}<br><small style="color:var(--text-muted)">${UI.timeAgo(new Date(scan.timestamp).getTime())}</small></td>
-                    <td>${UI.getStatusBadge('Completed')}</td>
+                    <td>${UI.getStatusBadge(scan.status || 'unknown')}</td>
                     <td class="export-actions">
                         <button class="btn btn-sm btn-view-detail" data-id="${scan.id}">View</button>
                         <button class="btn btn-sm btn-secondary" data-id="${scan.id}" onclick="Api.downloadPdf('${scan.id}')">PDF</button>
@@ -538,7 +580,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     <div><strong>Scan ID:</strong> <code>${scan.id}</code></div>
                     <div><strong>Type:</strong> ${typeLabel}</div>
                     <div><strong>Target:</strong> ${scan.target}</div>
-                    <div><strong>Status:</strong> ${UI.getStatusBadge('Completed')}</div>
+                    <div><strong>Status:</strong> ${UI.getStatusBadge(scan.status || 'unknown')}</div>
                     <div><strong>Time:</strong> ${UI.formatDate(scan.timestamp)}</div>
                 </div>
                 ${summaryHtml}

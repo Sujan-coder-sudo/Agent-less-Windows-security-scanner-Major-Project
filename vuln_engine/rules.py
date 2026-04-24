@@ -174,6 +174,7 @@ def apply_rules(service_data: Dict[str, Any]) -> List[Dict[str, Any]]:
         List of finding dictionaries with CVE information
     """
     findings = []
+<<<<<<< HEAD
     
     port = service_data.get("port")
     state = service_data.get("state", "unknown")
@@ -237,5 +238,179 @@ def apply_rules(service_data: Dict[str, Any]) -> List[Dict[str, Any]]:
             "version": version
         })
     
+=======
+
+    port = service_data["port"]
+    state = service_data["state"]
+    service = service_data["service"]
+    version = service_data.get("version", "")
+    protocol = service_data.get("protocol", "tcp")
+
+    # Helper function for safe CVE lookup with fallback
+    def safe_cve_lookup(primary, fallback, static_cves=None):
+        """Safely lookup CVEs with fallback to static list if API fails."""
+        try:
+            cves = search_cve(primary_keyword=primary, fallback_keyword=fallback)
+            if cves and len(cves) > 0:
+                return cves
+        except Exception as e:
+            print(f"[WARNING] CVE lookup failed for {primary}: {e}")
+
+        # Return static fallback CVEs if API fails
+        if static_cves:
+            return static_cves
+        return ["Manual verification required - CVE lookup unavailable"]
+
+    # 🔴 SMB (Port 445)
+    if port == 445:
+        if state in ["open", "open_filtered"]:
+            risk = "High"
+            note = "SMB (Server Message Block) exposed - high attack surface. Vulnerable to EternalBlue, SMBGhost, and lateral movement attacks."
+        else:
+            risk = "Medium"
+            note = "SMB port detected but filtered. May still be accessible under certain conditions."
+
+        cves = safe_cve_lookup(
+            "SMBv1 Windows exploit",
+            "EternalBlue SMB",
+            static_cves=["CVE-2017-0144", "CVE-2020-0796", "MS17-010"]
+        )
+
+        findings.append({
+            "port": port,
+            "protocol": protocol,
+            "state": state,
+            "service": service,
+            "issue": "SMB service detected",
+            "risk": risk,
+            "note": note,
+            "cves": cves
+        })
+
+    # 🔴 RDP (Port 3389)
+    elif port == 3389:
+        if state in ["open", "open_filtered"]:
+            risk = "High"
+            note = "RDP (Remote Desktop Protocol) exposed - vulnerable to BlueKeep, brute force, and remote code execution attacks. Immediate hardening recommended."
+        else:
+            risk = "Medium"
+            note = "RDP port detected but filtered. Review firewall rules and consider disabling RDP if not required."
+
+        cves = safe_cve_lookup(
+            "RDP remote code execution",
+            "BlueKeep RDP vulnerability",
+            static_cves=["CVE-2019-0708", "CVE-2019-1181", "CVE-2019-1182"]
+        )
+
+        findings.append({
+            "port": port,
+            "protocol": protocol,
+            "state": state,
+            "service": service,
+            "issue": "RDP service detected",
+            "risk": risk,
+            "note": note,
+            "cves": cves
+        })
+
+    # 🔴 RPC (Port 135)
+    elif port == 135:
+        if state in ["open", "open_filtered"]:
+            risk = "High"
+            note = "RPC (Remote Procedure Call) endpoint mapper exposed. Critical for lateral movement techniques (T1021.003). Disable or restrict access."
+        else:
+            risk = "Medium"
+            note = "RPC port detected but filtered. Review if RPC is required for business operations."
+
+        findings.append({
+            "port": port,
+            "protocol": protocol,
+            "state": state,
+            "service": service,
+            "issue": "RPC endpoint mapper exposed",
+            "risk": risk,
+            "note": note,
+            "cves": ["MS08-067", "CVE-2008-4250", "Lateral Movement Vector (T1021.003)"]
+        })
+
+    # 🔴 NetBIOS (Port 139)
+    elif port == 139:
+        if state in ["open", "open_filtered"]:
+            risk = "High"
+            note = "NetBIOS over TCP/IP exposed. Enables SMB enumeration, password brute-forcing, and information disclosure attacks."
+        else:
+            risk = "Medium"
+            note = "NetBIOS port detected but filtered. Legacy protocol that should be disabled on modern networks."
+
+        findings.append({
+            "port": port,
+            "protocol": protocol,
+            "state": state,
+            "service": service,
+            "issue": "NetBIOS service detected",
+            "risk": risk,
+            "note": note,
+            "cves": ["Enumeration Risk (T1018)", "Information Disclosure (T1087)"]
+        })
+
+    # 🔴 WinRM (Port 5985)
+    elif port == 5985 or port == 5986:
+        if state in ["open", "open_filtered"]:
+            risk = "High"
+            note = f"WinRM (Windows Remote Management) exposed on port {port}. Enables remote PowerShell execution. Restrict to authorized management hosts only."
+        else:
+            risk = "Medium"
+            note = f"WinRM port {port} detected but filtered. Verify if WinRM is required for system management."
+
+        cves = safe_cve_lookup(
+            "WinRM remote execution vulnerability",
+            "Windows remote management vulnerability",
+            static_cves=["Remote Execution Vector (T1021.006)"]
+        )
+
+        findings.append({
+            "port": port,
+            "protocol": protocol,
+            "state": state,
+            "service": service,
+            "issue": "WinRM service detected",
+            "risk": risk,
+            "note": note,
+            "cves": cves
+        })
+
+    # 🔴 HTTP/HTTPS (Ports 80, 443, 8080, 8443)
+    elif service in ["http", "https"] or port in [80, 443, 8080, 8443]:
+        if state in ["open", "open_filtered"]:
+            # Higher risk for HTTP vs HTTPS
+            if service == "http" or port == 80 or port == 8080:
+                risk = "Medium"
+                note = f"HTTP service on port {port}. Unencrypted traffic. Check for outdated web server versions and misconfigurations."
+            else:
+                risk = "Low"
+                note = f"HTTPS service on port {port}. Verify TLS configuration and certificate validity."
+        else:
+            risk = "Low"
+            note = f"Web service on port {port} is filtered."
+
+        search_term = version if version else f"{service} {port}"
+        cves = safe_cve_lookup(
+            search_term,
+            "HTTP server vulnerability",
+            static_cves=["Review server version for known CVEs"]
+        )
+
+        findings.append({
+            "port": port,
+            "protocol": protocol,
+            "state": state,
+            "service": service,
+            "issue": f"{service.upper() if service else 'Web'} service on port {port}",
+            "risk": risk,
+            "note": note,
+            "cves": cves
+        })
+
+>>>>>>> a542a4e (Working stage)
     return findings
 

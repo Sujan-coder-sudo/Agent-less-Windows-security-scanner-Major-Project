@@ -9,6 +9,7 @@ from services.scan_service import (
     get_scan_history,
     get_scan_by_id,
     get_latest_scan,
+    clear_scan_history,
 )
 from services.pdf_service import generate_pdf
 from utils.validator import validate_target
@@ -23,6 +24,8 @@ def start_scan():
     body = request.get_json(silent=True) or {}
     target    = str(body.get("target", "")).strip()
     scan_type = str(body.get("scan_type", "")).strip()
+    username  = str(body.get("username", "")).strip() or None
+    password  = str(body.get("password", "")).strip() or None
 
     # Validate target
     valid, reason = validate_target(target)
@@ -37,19 +40,35 @@ def start_scan():
         }), 400
 
     try:
-        payload = run_scan(target, scan_type)
+        payload = run_scan(target, scan_type, username, password)
         return jsonify({
             "status":  "success",
-            "scan_id": payload["scan_id"],
-            "message": f"{scan_type} completed successfully.",
+            "message": f"{scan_type} started in background thread.",
             "data":    payload,
-        }), 200
-    except FileNotFoundError as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
-    except RuntimeError as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+        }), 202
     except Exception as e:
         return jsonify({"status": "error", "message": f"Unexpected error: {str(e)}"}), 500
+
+
+# ── GET /api/scans/<scan_id>/status ────────────────────────────────────────────
+
+@scan_bp.route("/scans/<scan_id>/status", methods=["GET"])
+def get_scan_status(scan_id):
+    """Lightweight endpoint for polling scan progress."""
+    try:
+        scan = get_scan_by_id(scan_id)
+        if scan is None:
+            return jsonify({"status": "error", "message": f"Scan '{scan_id}' not found."}), 404
+        return jsonify({
+            "status": "success", 
+            "data": {
+                "scan_id": scan["scan_id"],
+                "status": scan["status"],
+                "error_message": scan.get("error_message")
+            }
+        }), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 # ── GET /api/scans ─────────────────────────────────────────────────────────────
@@ -115,3 +134,21 @@ def export_pdf(scan_id):
 
     except Exception as e:
         return jsonify({"status": "error", "message": f"PDF generation failed: {str(e)}"}), 500
+
+
+# ── DELETE /api/scans ──────────────────────────────────────────────────────────
+
+@scan_bp.route("/scans", methods=["DELETE"])
+def delete_all_scans():
+    """
+    Clear all scan history with cascade delete for findings.
+    """
+    try:
+        result = clear_scan_history()
+        return jsonify({
+            "status": "success",
+            "message": f"Deleted {result['scans_deleted']} scans and {result['findings_deleted']} findings.",
+            "data": result
+        }), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Failed to clear history: {str(e)}"}), 500

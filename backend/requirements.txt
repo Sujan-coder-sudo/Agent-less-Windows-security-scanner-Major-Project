@@ -1,2 +1,25 @@
-flask>=3.0.0
-flask-cors>=4.0.0
+# Framework
+Flask==3.0.3
+Flask-Cors==4.0.0
+
+# Database
+Flask-SQLAlchemy==3.1.1
+SQLAlchemy==2.0.29
+Flask-Migrate==4.0.5
+
+# Configuration
+python-dotenv==1.0.1
+
+# Async / Background Tasks
+celery==5.3.6
+redis==5.0.3
+
+# Remote Execution & Networking
+pywinrm==0.4.3
+requests==2.31.0
+
+# Security / Auth
+Flask-JWT-Extended==4.6.0
+
+# Reporting
+reportlab==4.1.0

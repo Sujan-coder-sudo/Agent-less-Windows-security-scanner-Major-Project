@@ -34,7 +34,11 @@ REQUEST_HEADERS = {
     "User-Agent": "Agentless-Vuln-Scanner/1.0"
 }
 
-OUTPUT_DIR = "output"
+# Always write output relative to THIS script's directory, not the CWD.
+# This prevents the output file from being created in a wrong location
+# when called as a subprocess from scan_service.py.
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+OUTPUT_DIR  = os.path.join(_SCRIPT_DIR, "output")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # -----------------------------
@@ -64,13 +68,6 @@ def is_admin() -> bool:
         return ctypes.windll.shell32.IsUserAnAdmin() != 0
     except Exception:
         return False
-
-def relaunch_as_admin():
-    """Relaunches the script with administrator privileges and exits."""
-    executable = sys.executable
-    args = " ".join([f'"{arg}"' for arg in sys.argv])
-    ctypes.windll.shell32.ShellExecuteW(None, "runas", executable, args, None, 1)
-    sys.exit(0)
 
 def extract_kbs(output: str) -> List[str]:
     """Extract KB numbers like KB5021234 from command output."""
@@ -568,15 +565,19 @@ def export_pdf(report):
 
     doc.build(story)
     return path
-
-# -----------------------------
 # MAIN
 # -----------------------------
 
 def main():
-    if not is_admin():
-        print("Not running as administrator. Relaunching...")
-        relaunch_as_admin()
+    """
+    Main entry point for OS inspection scan.
+    Always runs all 13 categories - no admin elevation required.
+    Non-privileged checks simply return partial data with status='restricted'.
+    """
+    admin_status = "YES" if is_admin() else "NO (some checks will be restricted)"
+    print(f"[core.py] Administrator privileges: {admin_status}")
+    print(f"[core.py] Output directory: {OUTPUT_DIR}")
+    print(f"[core.py] Starting 13-category security scan...")
 
     report = [
         scan_os_profiling(),
@@ -594,6 +595,8 @@ def main():
         scan_connections()
     ]
 
+    print(f"[core.py] Completed {len(report)} scan categories.")
+
     metadata = generate_scan_metadata()
 
     final_output = {
@@ -603,11 +606,15 @@ def main():
     }
 
     json_path = export_json(final_output)
-    pdf_path = export_pdf(report)
+    print(f"[core.py] JSON report written to: {json_path}")
 
-    print("Report generated")
-    print(f"JSON: {json_path}")
-    print(f"PDF: {pdf_path}")
+    try:
+        pdf_path = export_pdf(report)
+        print(f"[core.py] PDF report written to: {pdf_path}")
+    except Exception as pdf_err:
+        print(f"[core.py] WARNING: PDF export failed (non-critical): {pdf_err}")
+
+    print("[core.py] Scan complete.")
 
 if __name__ == "__main__":
     main()
