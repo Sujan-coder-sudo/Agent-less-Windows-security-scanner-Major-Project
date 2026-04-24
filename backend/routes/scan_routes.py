@@ -115,6 +115,7 @@ def export_pdf(scan_id):
     """
     Generate and download a PDF report for the specified scan.
     """
+    import traceback
     try:
         # Load the scan data
         scan = get_scan_by_id(scan_id)
@@ -133,6 +134,8 @@ def export_pdf(scan_id):
         )
 
     except Exception as e:
+        print("[PDF ERROR FULL TRACEBACK]")
+        print(traceback.format_exc())
         return jsonify({"status": "error", "message": f"PDF generation failed: {str(e)}"}), 500
 
 

@@ -222,55 +222,104 @@
                 
                 <section id="analytics-section" class="section">
                     <header class="section-header">
-                        <h2>Security Analytics</h2>
+                        <h2>Security Analytics Dashboard</h2>
                         <div class="header-actions">
                             <button class="btn btn-secondary btn-sm" id="btn-refresh-analytics">↻ Refresh Latest</button>
                         </div>
                     </header>
                     
-                    <!-- Summary Widgets -->
-                    <div class="metrics-grid">
-                        <div class="metric-card">
-                            <div class="metric-title">Total Checks</div>
-                            <div class="metric-value" id="analytic-checks">0</div>
+                    <!-- Executive Summary Panel -->
+                    <div class="executive-summary-panel" id="executive-summary">
+                        <div class="summary-header">
+                            <h3>Executive Summary</h3>
+                            <span class="scan-type-badge" id="exec-scan-type">No Data</span>
                         </div>
-                        <div class="metric-card alert">
-                            <div class="metric-title">Critical Issues</div>
-                            <div class="metric-value text-danger" id="analytic-critical">0</div>
+                        <div class="summary-content">
+                            <div class="posture-assessment" id="posture-assessment">
+                                <div class="posture-score" id="posture-score">-</div>
+                                <div class="posture-label">Security Posture</div>
+                            </div>
+                            <div class="summary-details">
+                                <div class="detail-row">
+                                    <span class="detail-label">Target:</span>
+                                    <span class="detail-value" id="exec-target">-</span>
+                                </div>
+                                <div class="detail-row">
+                                    <span class="detail-label">Last Scan:</span>
+                                    <span class="detail-value" id="exec-timestamp">-</span>
+                                </div>
+                                <div class="detail-row">
+                                    <span class="detail-label">Risk Score:</span>
+                                    <span class="detail-value" id="exec-risk-score">-</span>
+                                </div>
+                            </div>
                         </div>
-                        <div class="metric-card warning">
-                            <div class="metric-title">High Issues</div>
-                            <div class="metric-value text-warning" id="analytic-high">0</div>
+                    </div>
+                    
+                    <!-- Executive Metrics Grid -->
+                    <div class="metrics-grid executive-metrics">
+                        <div class="metric-card executive-card">
+                            <div class="metric-icon">🔍</div>
+                            <div class="metric-info">
+                                <div class="metric-title">Total Checks</div>
+                                <div class="metric-value" id="analytic-checks">0</div>
+                            </div>
                         </div>
-                        <div class="metric-card" style="box-shadow: 0 0 10px rgba(255,184,77,0.2);">
-                            <div class="metric-title">Medium Issues</div>
-                            <div class="metric-value" style="color:var(--accent-yellow);" id="analytic-medium">0</div>
+                        <div class="metric-card executive-card critical-card">
+                            <div class="metric-icon">🚨</div>
+                            <div class="metric-info">
+                                <div class="metric-title">Critical Issues</div>
+                                <div class="metric-value text-danger" id="analytic-critical">0</div>
+                            </div>
                         </div>
-                        <div class="metric-card" style="box-shadow: 0 0 10px rgba(0,255,102,0.2);">
-                            <div class="metric-title">Low Issues</div>
-                            <div class="metric-value" style="color:var(--accent-green);" id="analytic-low">0</div>
+                        <div class="metric-card executive-card high-card">
+                            <div class="metric-icon">⚠️</div>
+                            <div class="metric-info">
+                                <div class="metric-title">High Issues</div>
+                                <div class="metric-value text-warning" id="analytic-high">0</div>
+                            </div>
+                        </div>
+                        <div class="metric-card executive-card medium-card">
+                            <div class="metric-icon">📋</div>
+                            <div class="metric-info">
+                                <div class="metric-title">Medium Issues</div>
+                                <div class="metric-value" id="analytic-medium">0</div>
+                            </div>
+                        </div>
+                        <div class="metric-card executive-card low-card">
+                            <div class="metric-icon">✅</div>
+                            <div class="metric-info">
+                                <div class="metric-title">Low Issues</div>
+                                <div class="metric-value" id="analytic-low">0</div>
+                            </div>
                         </div>
                     </div>
 
-                    <!-- Risk Distribution & Category Table -->
+                    <!-- Analytics Dashboard Panels -->
                     <div class="dashboard-panels analytics-panels">
-                        <div class="panel">
-                            <h3>Risk Distribution</h3>
-                            <div class="chart-container" style="position: relative; height:250px; width:100%; display: flex; justify-content: center;">
+                        <div class="panel risk-panel">
+                            <h3>Risk Distribution Analysis</h3>
+                            <div class="chart-wrapper">
                                 <canvas id="risk-donut-chart"></canvas>
                             </div>
+                            <div class="chart-legend" id="risk-legend">
+                                <!-- Dynamic legend populated by JS -->
+                            </div>
                         </div>
-                        <div class="panel">
-                            <h3>Detailed Findings</h3>
-                            <div class="table-container" style="max-height: 250px; overflow-y: auto;">
+                        <div class="panel findings-panel">
+                            <div class="panel-header">
+                                <h3>Priority Findings</h3>
+                                <span class="findings-count" id="findings-count">0 items</span>
+                            </div>
+                            <div class="table-container findings-table-container">
                                 <table class="data-table hoverable" id="analytics-table">
                                     <thead>
                                         <tr>
-                                            <th>Category</th>
-                                            <th>Risk Level</th>
+                                            <th>Category / Port</th>
+                                            <th>Risk</th>
                                             <th>Status</th>
-                                            <th>Key Finding</th>
-                                            <th>Action</th>
+                                            <th>Finding Summary</th>
+                                            <th>Details</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -278,6 +327,14 @@
                                     </tbody>
                                 </table>
                             </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Key Insights Panel -->
+                    <div class="insights-panel" id="insights-panel">
+                        <h3>Key Security Insights</h3>
+                        <div class="insights-grid" id="insights-grid">
+                            <!-- Dynamic insights populated by JS -->
                         </div>
                     </div>
                 </section>

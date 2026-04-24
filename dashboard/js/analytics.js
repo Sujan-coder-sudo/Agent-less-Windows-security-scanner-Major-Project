@@ -1,40 +1,40 @@
 /**
  * analytics.js
- * Renders analytics section using the unified API result shape:
- *   latest.result = { summary: {...}, data: [...] }
- *
- * scan_type === 'port_scan':
- *   summary: { total_findings, open_ports, risk_score, risk_distribution:{Critical,High,Medium,Low} }
- *   data:    [ { port, state, issue, risk, note, cves:[...] }, ... ]
- *
- * scan_type === 'os_inspection':
- *   summary: { total_checks, critical, high, medium, low, failed }
- *   data:    [ { category, status, risk, findings:{...}, analysis:{...}, nvd:[...] }, ... ]
+ * Professional Security Analytics Dashboard
+ * Executive-grade presentation with posture assessment and insights
  */
 
 document.addEventListener('DOMContentLoaded', () => {
     const btnRefresh = document.getElementById('btn-refresh-analytics');
     if (btnRefresh) {
-        btnRefresh.addEventListener('click', fetchScanData);
+        btnRefresh.addEventListener('click', () => {
+            btnRefresh.classList.add('loading-shimmer');
+            fetchScanData().then(() => {
+                setTimeout(() => btnRefresh.classList.remove('loading-shimmer'), 500);
+            });
+        });
     }
 
     document.getElementById('nav-list').addEventListener('click', (e) => {
         const link = e.target.closest('.nav-item');
         if (link && link.getAttribute('data-target') === 'analytics-section') {
-            fetchScanData();
+            setTimeout(fetchScanData, 100);
         }
     });
 
-    const activeSection = document.querySelector('.section.active');
-    if (activeSection && activeSection.id === 'analytics-section') {
-        fetchScanData();
-    }
+    // Initial load if analytics is active
+    setTimeout(() => {
+        const activeSection = document.querySelector('.section.active');
+        if (activeSection && activeSection.id === 'analytics-section') {
+            fetchScanData();
+        }
+    }, 200);
 });
 
-let riskChartInstance = null;
-let currentScanData   = null;
-
 // ── Fetch ──────────────────────────────────────────────────────────────────────
+
+let riskChartInstance = null;
+let currentScanData = null;
 
 async function fetchScanData() {
     try {
@@ -42,67 +42,169 @@ async function fetchScanData() {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const res = await response.json();
 
-        // API envelope: { status:"success", data: { scan_id, scan_type, target, timestamp, result } }
         currentScanData = res.data || res;
 
         if (!currentScanData || !currentScanData.result) {
-            UI.notify('No scan data available yet.', 'info');
+            renderEmptyState();
             return;
         }
 
         const scanType = currentScanData.scan_type || 'unknown';
-        const result   = currentScanData.result    || {};
-        const summary  = result.summary            || {};
-        const data     = result.data               || [];
+        const result = currentScanData.result || {};
+        const summary = result.summary || {};
+        const data = result.data || result.results || [];
 
-        renderMetaHeader(currentScanData);
+        // Render all dashboard components
+        renderExecutiveSummary(currentScanData, scanType, summary);
         renderSummaryCards(scanType, summary);
         renderRiskChart(scanType, summary);
+        renderRiskLegend(scanType, summary);
         renderTable(scanType, data);
-        UI.notify('Analytics data loaded', 'success');
+        renderInsights(scanType, summary, data);
+        
+        UI.notify('Security analytics loaded', 'success');
 
     } catch (err) {
         console.error('[Analytics] fetchScanData error:', err);
         UI.notify('Failed to load analytics: ' + err.message, 'error');
+        renderEmptyState();
     }
 }
 
-// ── Meta header ────────────────────────────────────────────────────────────────
-
-function renderMetaHeader(scan) {
-    const el = document.getElementById('analytics-meta');
-    if (!el) return;
-    const label = UI.getScanTypeLabel(scan.scan_type);
-    el.innerHTML = `
-        <span class="meta-chip">${label}</span>
-        <span class="meta-chip">🎯 ${scan.target || 'N/A'}</span>
-        <span class="meta-chip">🕒 ${UI.formatDate(scan.timestamp)}</span>
-    `;
+function renderEmptyState() {
+    document.getElementById('exec-scan-type').textContent = 'NO DATA';
+    document.getElementById('posture-score').textContent = '-';
+    document.getElementById('posture-score').className = 'posture-score unknown';
+    document.getElementById('exec-target').textContent = 'No scan data available';
+    document.getElementById('exec-timestamp').textContent = '-';
+    document.getElementById('exec-risk-score').textContent = '-';
+    
+    ['analytic-checks', 'analytic-critical', 'analytic-high', 'analytic-medium', 'analytic-low'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = '0';
+    });
+    
+    document.getElementById('findings-count').textContent = '0 items';
+    document.getElementById('insights-grid').innerHTML = '<div class="insight-card"><div class="insight-icon">📊</div><div class="insight-content"><h4>No Data Available</h4><p>Run a scan to see security analytics and insights.</p></div></div>';
 }
 
-// ── Summary cards ──────────────────────────────────────────────────────────────
+// ── Executive Summary ───────────────────────────────────────────────────────────
+
+function renderExecutiveSummary(scan, scanType, summary) {
+    // Scan type badge
+    const typeLabel = scanType === 'port_scan' ? 'Port Scan' : 
+                      scanType === 'os_inspection' ? 'OS Inspection' : 'Unknown';
+    document.getElementById('exec-scan-type').textContent = typeLabel;
+    
+    // Target and timestamp
+    document.getElementById('exec-target').textContent = scan.target || 'localhost';
+    document.getElementById('exec-timestamp').textContent = UI.formatDate(scan.timestamp);
+    
+    // Risk score and posture
+    let riskScore, postureClass, postureText;
+    
+    if (scanType === 'port_scan') {
+        riskScore = summary.risk_score || 0;
+        const rd = summary.risk_distribution || {};
+        const total = summary.total_findings || 1;
+        const criticalHigh = (rd.Critical || 0) + (rd.High || 0);
+        
+        if (criticalHigh > 0 || riskScore >= 7) {
+            postureClass = 'critical';
+            postureText = 'CRITICAL';
+        } else if (riskScore >= 4 || (rd.Medium || 0) > 0) {
+            postureClass = 'high';
+            postureText = 'HIGH RISK';
+        } else if (riskScore > 0) {
+            postureClass = 'medium';
+            postureText = 'MEDIUM';
+        } else {
+            postureClass = 'low';
+            postureText = 'LOW RISK';
+        }
+    } else {
+        const critical = summary.critical || 0;
+        const high = summary.high || 0;
+        riskScore = critical > 0 ? 10 : high > 0 ? 7 : summary.medium > 0 ? 4 : 1;
+        
+        if (critical > 0) {
+            postureClass = 'critical';
+            postureText = 'CRITICAL';
+        } else if (high > 0) {
+            postureClass = 'high';
+            postureText = 'HIGH RISK';
+        } else if (summary.medium > 0) {
+            postureClass = 'medium';
+            postureText = 'MEDIUM';
+        } else {
+            postureClass = 'low';
+            postureText = 'LOW RISK';
+        }
+    }
+    
+    const scoreEl = document.getElementById('posture-score');
+    scoreEl.textContent = postureText;
+    scoreEl.className = `posture-score ${postureClass}`;
+    document.getElementById('exec-risk-score').textContent = `${riskScore}/10`;
+}
+
+// ── Summary Cards ──────────────────────────────────────────────────────────────
 
 function renderSummaryCards(scanType, summary) {
+    let checks, critical, high, medium, low;
+    
     if (scanType === 'port_scan') {
         const rd = summary.risk_distribution || {};
-        _setCard('analytic-checks',   summary.total_findings || 0);
-        _setCard('analytic-critical', rd.Critical            || 0);
-        _setCard('analytic-high',     rd.High                || 0);
-        _setCard('analytic-medium',   rd.Medium              || 0);
-        _setCard('analytic-low',      rd.Low                 || 0);
+        checks = summary.total_findings || 0;
+        critical = rd.Critical || 0;
+        high = rd.High || 0;
+        medium = rd.Medium || 0;
+        low = rd.Low || 0;
     } else {
-        // os_inspection
-        _setCard('analytic-checks',   summary.total_checks || 0);
-        _setCard('analytic-critical', summary.critical      || 0);
-        _setCard('analytic-high',     summary.high          || 0);
-        _setCard('analytic-medium',   summary.medium        || 0);
-        _setCard('analytic-low',      summary.low           || 0);
+        checks = summary.total_checks || 0;
+        critical = summary.critical || 0;
+        high = summary.high || 0;
+        medium = summary.medium || 0;
+        low = summary.low || 0;
     }
+    
+    _setCard('analytic-checks', checks);
+    _setCard('analytic-critical', critical);
+    _setCard('analytic-high', high);
+    _setCard('analytic-medium', medium);
+    _setCard('analytic-low', low);
+    
+    // Update findings count
+    const totalFindings = critical + high + medium + low;
+    document.getElementById('findings-count').textContent = `${totalFindings} ${totalFindings === 1 ? 'item' : 'items'}`;
 }
 
 function _setCard(id, val) {
     const el = document.getElementById(id);
-    if (el) el.textContent = val;
+    if (el) {
+        // Animate number change
+        const current = parseInt(el.textContent) || 0;
+        const target = parseInt(val) || 0;
+        animateNumber(el, current, target);
+    }
+}
+
+function animateNumber(el, from, to) {
+    const duration = 500;
+    const start = performance.now();
+    
+    function update(now) {
+        const elapsed = now - start;
+        const progress = Math.min(elapsed / duration, 1);
+        const current = Math.round(from + (to - from) * progress);
+        el.textContent = current;
+        
+        if (progress < 1) {
+            requestAnimationFrame(update);
+        }
+    }
+    
+    requestAnimationFrame(update);
 }
 
 // ── Risk donut chart ───────────────────────────────────────────────────────────
@@ -325,6 +427,177 @@ function _renderOsModal(item) {
             h.addEventListener('click', () => h.closest('.accordion-item').classList.toggle('open'));
         });
     }
+}
+
+// ── Risk Legend ───────────────────────────────────────────────────────────────
+
+function renderRiskLegend(scanType, summary) {
+    const legend = document.getElementById('risk-legend');
+    if (!legend) return;
+    
+    let critical, high, medium, low;
+    
+    if (scanType === 'port_scan') {
+        const rd = summary.risk_distribution || {};
+        critical = rd.Critical || 0;
+        high = rd.High || 0;
+        medium = rd.Medium || 0;
+        low = rd.Low || 0;
+    } else {
+        critical = summary.critical || 0;
+        high = summary.high || 0;
+        medium = summary.medium || 0;
+        low = summary.low || 0;
+    }
+    
+    legend.innerHTML = `
+        <div class="legend-item">
+            <span class="legend-dot critical"></span>
+            <span>Critical (${critical})</span>
+        </div>
+        <div class="legend-item">
+            <span class="legend-dot high"></span>
+            <span>High (${high})</span>
+        </div>
+        <div class="legend-item">
+            <span class="legend-dot medium"></span>
+            <span>Medium (${medium})</span>
+        </div>
+        <div class="legend-item">
+            <span class="legend-dot low"></span>
+            <span>Low (${low})</span>
+        </div>
+    `;
+}
+
+// ── Insights ────────────────────────────────────────────────────────────────────
+
+function renderInsights(scanType, summary, data) {
+    const grid = document.getElementById('insights-grid');
+    if (!grid) return;
+    
+    const insights = [];
+    
+    if (scanType === 'port_scan') {
+        const rd = summary.risk_distribution || {};
+        const criticalHigh = (rd.Critical || 0) + (rd.High || 0);
+        
+        if (criticalHigh > 0) {
+            insights.push({
+                icon: '🚨',
+                title: 'Critical Exposures Detected',
+                text: `${criticalHigh} high-risk port exposure${criticalHigh > 1 ? 's' : ''} require immediate attention.`
+            });
+        }
+        
+        const openPorts = summary.open_ports || 0;
+        if (openPorts > 10) {
+            insights.push({
+                icon: '🌐',
+                title: 'Large Attack Surface',
+                text: `${openPorts} open ports detected. Consider reviewing service necessity.`
+            });
+        }
+        
+        // Check for common risky services
+        const riskyServices = data.filter(d => ['RDP', 'SMB', 'Telnet', 'FTP'].includes(d.service));
+        if (riskyServices.length > 0) {
+            insights.push({
+                icon: '⚠️',
+                title: 'High-Risk Services Exposed',
+                text: `${riskyServices.length} potentially vulnerable service${riskyServices.length > 1 ? 's' : ''} detected (RDP/SMB/Telnet/FTP).`
+            });
+        }
+        
+        // CVE insights
+        const withCves = data.filter(d => d.cves && d.cves.length > 0);
+        if (withCves.length > 0) {
+            insights.push({
+                icon: '🛡️',
+                title: 'CVE References Found',
+                text: `${withCves.length} finding${withCves.length > 1 ? 's' : ''} ha${withCves.length > 1 ? 've' : 's'} known CVE associations. Review for patching priorities.`
+            });
+        }
+        
+    } else {
+        // OS Inspection insights
+        const critical = summary.critical || 0;
+        const high = summary.high || 0;
+        
+        if (critical > 0) {
+            insights.push({
+                icon: '🔴',
+                title: 'Critical System Issues',
+                text: `${critical} critical configuration issue${critical > 1 ? 's' : ''} require immediate remediation.`
+            });
+        }
+        
+        if (high > 0) {
+            insights.push({
+                icon: '🟠',
+                title: 'High-Risk Configurations',
+                text: `${high} high-severity finding${high > 1 ? 's' : ''} should be addressed soon.`
+            });
+        }
+        
+        // Check for EDR/AV issues
+        const edrIssues = data.filter(d => 
+            d.category?.includes('EDR') || d.category?.includes('AV') || d.category?.includes('Defender')
+        );
+        if (edrIssues.length > 0 && edrIssues.some(d => d.risk === 'CRITICAL' || d.risk === 'HIGH')) {
+            insights.push({
+                icon: '🛡️',
+                title: 'Endpoint Protection Gap',
+                text: 'Endpoint protection issues detected. Review EDR/AV configuration.'
+            });
+        }
+        
+        // Check for missing patches
+        const patchIssues = data.filter(d => d.category?.includes('Hotfix') || d.category?.includes('Patch'));
+        if (patchIssues.length > 0) {
+            insights.push({
+                icon: '🔧',
+                title: 'Patch Management',
+                text: 'Missing security updates detected. Ensure regular patch deployment.'
+            });
+        }
+        
+        // Check for user/admin issues
+        const userIssues = data.filter(d => d.category?.includes('User') || d.category?.includes('Admin'));
+        if (userIssues.length > 0) {
+            insights.push({
+                icon: '👤',
+                title: 'Account Security',
+                text: 'Review privileged account configuration and access controls.'
+            });
+        }
+    }
+    
+    // Default insight if none generated
+    if (insights.length === 0) {
+        insights.push({
+            icon: '✅',
+            title: 'No Major Issues',
+            text: 'No critical or high-severity findings detected. Continue monitoring.'
+        });
+    }
+    
+    // Always add a recommendation
+    insights.push({
+        icon: '📋',
+        title: 'Recommended Action',
+        text: 'Generate and review the full PDF report for detailed findings and remediation guidance.'
+    });
+    
+    grid.innerHTML = insights.map(insight => `
+        <div class="insight-card">
+            <div class="insight-icon">${insight.icon}</div>
+            <div class="insight-content">
+                <h4>${escapeHtml(insight.title)}</h4>
+                <p>${escapeHtml(insight.text)}</p>
+            </div>
+        </div>
+    `).join('');
 }
 
 // ── Utility ────────────────────────────────────────────────────────────────────

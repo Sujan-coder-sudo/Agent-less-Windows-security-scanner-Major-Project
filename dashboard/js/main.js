@@ -25,6 +25,140 @@ function showError(msg) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Scan State Management
+// ─────────────────────────────────────────────────────────────
+const ScanState = {
+    isRunning: false,
+    currentScanId: null,
+    startTime: null,
+    progressInterval: null,
+    
+    start(scanId) {
+        this.isRunning = true;
+        this.currentScanId = scanId;
+        this.startTime = Date.now();
+        this.disableScanButtons();
+        this.showLoadingOverlay();
+        this.startProgressUpdates();
+    },
+    
+    stop() {
+        this.isRunning = false;
+        this.currentScanId = null;
+        this.startTime = null;
+        if (this.progressInterval) {
+            clearInterval(this.progressInterval);
+            this.progressInterval = null;
+        }
+        this.enableScanButtons();
+        this.hideLoadingOverlay();
+    },
+    
+    disableScanButtons() {
+        const buttons = document.querySelectorAll('#btn-p2-scan, #btn-p3-scan');
+        buttons.forEach(btn => {
+            btn.disabled = true;
+            btn.classList.add('scanning-disabled');
+        });
+    },
+    
+    enableScanButtons() {
+        const buttons = document.querySelectorAll('#btn-p2-scan, #btn-p3-scan');
+        buttons.forEach(btn => {
+            btn.disabled = false;
+            btn.classList.remove('scanning-disabled');
+        });
+    },
+    
+    showLoadingOverlay() {
+        let overlay = document.getElementById('scan-loading-overlay');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'scan-loading-overlay';
+            overlay.className = 'scan-loading-overlay';
+            overlay.innerHTML = `
+                <div class="scan-loading-content">
+                    <div class="scan-loader">
+                        <div class="loader-ring"></div>
+                        <div class="loader-ring"></div>
+                        <div class="loader-ring"></div>
+                    </div>
+                    <h3 class="scan-loading-title">Security Scan in Progress</h3>
+                    <p class="scan-loading-status">Please wait, security scan in progress...</p>
+                    <div class="scan-progress-container">
+                        <div class="scan-progress-bar" id="scan-progress-bar"></div>
+                    </div>
+                    <div class="scan-timer" id="scan-timer">00:00 elapsed</div>
+                    <p class="scan-loading-note">This may take 30-60 seconds. Do not navigate away.</p>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+        }
+        overlay.classList.add('active');
+        document.body.classList.add('scan-in-progress');
+    },
+    
+    hideLoadingOverlay() {
+        const overlay = document.getElementById('scan-loading-overlay');
+        if (overlay) {
+            overlay.classList.remove('active');
+        }
+        document.body.classList.remove('scan-in-progress');
+    },
+    
+    startProgressUpdates() {
+        const progressBar = document.getElementById('scan-progress-bar');
+        const timer = document.getElementById('scan-timer');
+        const status = document.querySelector('.scan-loading-status');
+        
+        let progress = 0;
+        const statuses = [
+            'Initializing security scan...',
+            'Collecting system information...',
+            'Analyzing configurations...',
+            'Checking for vulnerabilities...',
+            'Correlating findings with CVE database...',
+            'Generating security report...',
+            'Finalizing results...'
+        ];
+        
+        this.progressInterval = setInterval(() => {
+            if (!this.isRunning) return;
+            
+            // Update timer
+            const elapsed = Math.floor((Date.now() - this.startTime) / 1000);
+            const minutes = Math.floor(elapsed / 60).toString().padStart(2, '0');
+            const seconds = (elapsed % 60).toString().padStart(2, '0');
+            if (timer) timer.textContent = `${minutes}:${seconds} elapsed`;
+            
+            // Simulate progress (scan typically takes 30-60 seconds)
+            // Progress moves slower as it approaches 90%
+            if (progress < 90) {
+                const increment = progress < 50 ? 2 : (progress < 75 ? 1 : 0.5);
+                progress = Math.min(95, progress + increment);
+                if (progressBar) progressBar.style.width = `${progress}%`;
+            }
+            
+            // Update status text periodically
+            const statusIndex = Math.min(statuses.length - 1, Math.floor(progress / 15));
+            if (status && statuses[statusIndex]) {
+                status.textContent = statuses[statusIndex];
+            }
+        }, 1000);
+    },
+    
+    complete() {
+        const progressBar = document.getElementById('scan-progress-bar');
+        if (progressBar) progressBar.style.width = '100%';
+        const status = document.querySelector('.scan-loading-status');
+        if (status) status.textContent = 'Scan complete! Processing results...';
+        
+        // Small delay before hiding to show completion
+        setTimeout(() => this.stop(), 800);
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
 // DOMContentLoaded bootstrap
 // ─────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
@@ -33,11 +167,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     injectErrorPanel();
     await checkBackend();
 
-    // Navigation
+    // Navigation - with scan lock protection
     document.getElementById('nav-list').addEventListener('click', (e) => {
         const link = e.target.closest('.nav-item');
         if (link) {
             e.preventDefault();
+            
+            // Prevent navigation during active scan
+            if (ScanState.isRunning) {
+                UI.notify('Navigation locked: Security scan in progress. Please wait.', 'warning');
+                return;
+            }
+            
             const target = link.getAttribute('data-target');
             UI.switchSection(target);
             if (target === 'overview-section') loadOverview();
@@ -121,20 +262,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     } else {
         formPortScan.addEventListener('submit', async (e) => {
             e.preventDefault();
+            
+            // Prevent duplicate scans
+            if (ScanState.isRunning) {
+                UI.notify('A scan is already in progress. Please wait.', 'warning');
+                return;
+            }
+            
             dbg('═══ Port Scanner submitted ═══');
 
             const target  = document.getElementById('p2-target').value.trim();
             const btn     = document.getElementById('btn-p2-scan');
             const btnText = btn.querySelector('.btn-text');
+            const resultsPanel = document.getElementById('p2-results-panel');
 
             if (!target) {
                 showError('Please enter a target IP address or localhost');
                 return;
             }
 
+            // Show loading state - stay on same page
+            ScanState.start();
             UI.setButtonLoading(btn, true);
             if (btnText) btnText.textContent = 'Scanning...';
-            document.getElementById('p2-results-panel').classList.add('hidden');
+            resultsPanel.classList.add('hidden');
 
             try {
                 UI.notify('Running Port Scanner…', 'info');
@@ -148,12 +299,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                 UI.notify('Scan queued. Waiting for completion...', 'info');
                 const finalScanData = await Api.pollScanCompletion(payload.data.scan_id);
 
+                // Mark scan as complete
+                ScanState.complete();
+                
                 UI.notify('Port Scan completed ✓', 'success');
                 renderPortScanResults(finalScanData.result || finalScanData, finalScanData);
-                document.getElementById('p2-results-panel').classList.remove('hidden');
+                resultsPanel.classList.remove('hidden');
+                resultsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 await Promise.allSettled([loadOverview(), loadHistory()]);
 
             } catch (err) {
+                ScanState.stop();
                 showError(`Port Scan failed: ${err.message}`);
             } finally {
                 UI.setButtonLoading(btn, false);
@@ -285,14 +441,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     } else {
         formOsInspect.addEventListener('submit', async (e) => {
             e.preventDefault();
+            
+            // Prevent duplicate scans
+            if (ScanState.isRunning) {
+                UI.notify('A scan is already in progress. Please wait.', 'warning');
+                return;
+            }
+            
             dbg('═══ OS Inspection submitted ═══');
 
             const btn     = document.getElementById('btn-p3-scan');
             const btnText = btn.querySelector('.btn-text');
+            const resultsPanel = document.getElementById('p3-results-panel');
 
+            // Show loading state - stay on same page
+            ScanState.start();
             UI.setButtonLoading(btn, true);
             if (btnText) btnText.textContent = 'Inspecting...';
-            document.getElementById('p3-results-panel').classList.add('hidden');
+            resultsPanel.classList.add('hidden');
 
             try {
                 UI.notify('Running OS Inspection…', 'info');
@@ -306,12 +472,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                 UI.notify('Inspection queued. Waiting for completion...', 'info');
                 const finalScanData = await Api.pollScanCompletion(payload.data.scan_id);
 
+                // Mark scan as complete
+                ScanState.complete();
+                
                 UI.notify('OS Inspection completed ✓', 'success');
                 renderOsInspectionResults(finalScanData.result || finalScanData, finalScanData);
-                document.getElementById('p3-results-panel').classList.remove('hidden');
+                const p3Panel = document.getElementById('p3-results-panel');
+                p3Panel.classList.remove('hidden');
+                p3Panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 await Promise.allSettled([loadOverview(), loadHistory()]);
 
             } catch (err) {
+                ScanState.stop();
                 showError(`OS Inspection failed: ${err.message}`);
             } finally {
                 UI.setButtonLoading(btn, false);
