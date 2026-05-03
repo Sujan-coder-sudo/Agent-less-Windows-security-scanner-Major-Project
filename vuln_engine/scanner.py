@@ -10,7 +10,13 @@ def run_nmap(target):
     logger.info(f"[NMAP] Starting scan against target: {target}")
 
     # Check if nmap is installed
+    import os
     nmap_path = shutil.which("nmap")
+    if not nmap_path:
+        default_win_path = r"C:\Program Files (x86)\Nmap\nmap.exe"
+        if os.path.exists(default_win_path):
+            nmap_path = default_win_path
+
     logger.info(f"[NMAP] Nmap executable path: {nmap_path}")
 
     if not nmap_path:
@@ -22,7 +28,7 @@ def run_nmap(target):
         raise RuntimeError(f"{error_msg}. Please install Nmap and ensure it's in your system PATH.")
 
     command = [
-        "nmap",
+        nmap_path,
         "-sV",           # Version detection
         "-Pn",           # Treat all hosts as online (skip host discovery)
         "-T4",           # Faster timing template

@@ -9,11 +9,23 @@ WINDOWS_PORTS = [
 
 def scan_host(ip):
     output = Path(f"output/scan_{ip}.xml")
+    output.parent.mkdir(parents=True, exist_ok=True)
     ports = ",".join(map(str, WINDOWS_PORTS))
 
+    import shutil
+    import os
+    
+    nmap_exec = shutil.which("nmap")
+    if not nmap_exec:
+        default_win_path = r"C:\Program Files (x86)\Nmap\nmap.exe"
+        if os.path.exists(default_win_path):
+            nmap_exec = default_win_path
+        else:
+            nmap_exec = "nmap"  # fallback
+
     cmd = [
-        "nmap",
-        "-sS",
+        nmap_exec,
+        "-sT",
         "-Pn",
         "-n",
         "--version-light",

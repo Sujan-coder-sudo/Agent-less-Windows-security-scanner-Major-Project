@@ -396,12 +396,12 @@ def _create_executive_summary(elements, styles, summary: Dict, scan_type: str):
                 label, value, val_color = metrics[i + j]
                 cell_content = [
                     Paragraph(value, ParagraphStyle(
-                        'MetricValue', fontSize=20, textColor=val_color,
+                        'MetricValue', fontSize=20, leading=24, spaceAfter=6, textColor=val_color,
                         fontName="Helvetica-Bold", alignment=TA_CENTER
                     )),
                     Paragraph(label, ParagraphStyle(
-                        'MetricLabel', fontSize=9, textColor=EnterpriseTheme.TEXT_MUTED,
-                        fontName="Helvetica", alignment=TA_CENTER, spaceBefore=4
+                        'MetricLabel', fontSize=10, leading=14, textColor=EnterpriseTheme.TEXT_MUTED,
+                        fontName="Helvetica", alignment=TA_CENTER, spaceBefore=2
                     ))
                 ]
                 row.append(cell_content)
@@ -549,24 +549,32 @@ def _create_detailed_findings(elements, styles, findings: List[Dict], scan_type:
         finding_elements = []
         
         # Header row with risk badge
+        # Use a nested table for the Risk Badge to guarantee perfect alignment
+        badge_table = Table([[Paragraph(f"<b>{risk}</b>", ParagraphStyle(
+            'RiskBadge', fontSize=8, leading=10, textColor=risk_color, fontName="Helvetica-Bold", alignment=TA_CENTER
+        ))]], colWidths=[0.8*inch], rowHeights=[0.25*inch])
+        
+        badge_table.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,-1), risk_bg),
+            ('BOX', (0,0), (-1,-1), 1, risk_color),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('ROUNDEDCORNERS', (0,0), (-1,-1), 4),
+            ('TOPPADDING', (0,0), (-1,-1), 4),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+        ]))
+
         header_data = [[
             Paragraph(f"<b>{title}</b>", ParagraphStyle(
-                'FindingTitle', fontSize=11, textColor=EnterpriseTheme.TEXT, fontName="Helvetica-Bold"
+                'FindingTitle', fontSize=11, leading=14, textColor=EnterpriseTheme.TEXT, fontName="Helvetica-Bold"
             )),
-            Paragraph(f"<b>{risk}</b>", ParagraphStyle(
-                'RiskBadge', fontSize=9, textColor=risk_color, fontName="Helvetica-Bold", alignment=TA_CENTER
-            ))
+            badge_table
         ]]
         
-        header_table = Table(header_data, colWidths=[5*inch, 1*inch])
+        header_table = Table(header_data, colWidths=[5.2*inch, 0.8*inch])
         header_table.setStyle(TableStyle([
-            ('BACKGROUND', (1,0), (1,0), risk_bg),
-            ('BOX', (1,0), (1,0), 1, risk_color),
-            ('LEFTPADDING', (0,0), (0,0), 0),
-            ('RIGHTPADDING', (1,0), (1,0), 8),
-            ('TOPPADDING', (0,0), (-1,0), 4),
-            ('BOTTOMPADDING', (0,0), (-1,0), 4),
-            ('VALIGN', (0,0), (-1,0), 'MIDDLE'),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('ALIGN', (1,0), (1,0), 'RIGHT'),
         ]))
         finding_elements.append(header_table)
         finding_elements.append(Spacer(1, 8))
@@ -619,6 +627,15 @@ def _create_detailed_findings(elements, styles, findings: List[Dict], scan_type:
                             f"<b>{key.replace('_', ' ').title()}:</b> {display_value}", 
                             content_style
                         ))
+
+        # Add Remediation Guidance directly inside the finding
+        rem_step = _get_specific_remediation(item.get("category"), item.get("issue"), item.get("port"), scan_type)
+        if rem_step:
+            finding_elements.append(Spacer(1, 4))
+            finding_elements.append(Paragraph(
+                f"<b>Remediation:</b> <font color='{EnterpriseTheme.TEXT_MUTED.hexval()}'>{rem_step}</font>", 
+                content_style
+            ))
 
         # CVEs section
         cves = item.get("cves", []) or item.get("nvd", [])
@@ -891,13 +908,13 @@ def _create_attack_surface(elements, styles, findings: List[Dict], scan_type: st
         pct = (count / max(total, 1) * 100)
         card_content = [
             Paragraph(str(count), ParagraphStyle(
-                'SeverityCount', fontSize=24, textColor=color, fontName="Helvetica-Bold", alignment=TA_CENTER
+                'SeverityCount', fontSize=24, leading=28, spaceAfter=6, textColor=color, fontName="Helvetica-Bold", alignment=TA_CENTER
             )),
             Paragraph(level, ParagraphStyle(
-                'SeverityLabel', fontSize=9, textColor=EnterpriseTheme.TEXT_MUTED, alignment=TA_CENTER
+                'SeverityLabel', fontSize=10, leading=14, spaceAfter=4, textColor=EnterpriseTheme.TEXT_MUTED, fontName="Helvetica-Bold", alignment=TA_CENTER
             )),
             Paragraph(f"{pct:.1f}%", ParagraphStyle(
-                'SeverityPct', fontSize=10, textColor=color, alignment=TA_CENTER
+                'SeverityPct', fontSize=10, leading=14, textColor=color, alignment=TA_CENTER
             )),
         ]
         card_row.append(card_content)
@@ -1011,7 +1028,142 @@ def _create_attack_surface(elements, styles, findings: List[Dict], scan_type: st
     elements.append(PageBreak())
 
 
-def _create_remediation(elements, styles):
+def _get_specific_remediation(category, issue, port, scan_type):
+    """Determine specific remediation steps based on finding data."""
+    if scan_type == "port_scan":
+        p = int(port) if str(port).isdigit() else 0
+        if p in [3389]: 
+            return (
+                "<b>1. Restrict Exposure:</b> Ensure RDP is not exposed directly to the public internet. Use a VPN or RDP Gateway.<br/>"
+                "<b>2. Authentication:</b> Enforce Network Level Authentication (NLA) and require MFA for all remote access.<br/>"
+                "<b>3. Access Control:</b> Limit RDP access to specific administrative IP addresses and authorized user groups.<br/>"
+                "<b>4. Monitoring:</b> Enable detailed auditing for successful and failed logon attempts."
+            )
+        if p in [445, 139]: 
+            return (
+                "<b>1. Disable Legacy Protocols:</b> Explicitly disable SMBv1 across all systems as it is highly vulnerable (e.g., WannaCry).<br/>"
+                "<b>2. Network Boundary:</b> Block SMB ports (445, 139) at the perimeter firewall to prevent external exposure.<br/>"
+                "<b>3. Patching:</b> Ensure all Windows systems have the latest security rollups applied.<br/>"
+                "<b>4. Hardening:</b> Require SMB signing to prevent NTLM relay attacks."
+            )
+        if p in [21, 22, 23]: 
+            return (
+                "<b>1. Deprecate Insecure Protocols:</b> Immediately disable Telnet (23) and FTP (21) as they transmit credentials in plaintext.<br/>"
+                "<b>2. Secure Alternatives:</b> Migrate services to SSH or SFTP.<br/>"
+                "<b>3. SSH Hardening:</b> For SSH, disable root login, enforce key-based authentication, and use strong cryptographic ciphers."
+            )
+        if p in [80, 8080]: 
+            return (
+                "<b>1. Enforce Encryption:</b> Redirect all HTTP traffic to HTTPS.<br/>"
+                "<b>2. Web Application Firewall:</b> Deploy a WAF to inspect incoming traffic for common web exploits.<br/>"
+                "<b>3. Security Headers:</b> Implement HSTS, CSP, and X-Frame-Options to protect against client-side attacks."
+            )
+        if p in [443, 8443]: 
+            return (
+                "<b>1. TLS Configuration:</b> Disable TLS 1.0 and TLS 1.1. Enforce TLS 1.2 or TLS 1.3 exclusively.<br/>"
+                "<b>2. Cipher Suites:</b> Disable weak ciphers (RC4, 3DES) and prioritize Perfect Forward Secrecy (PFS) suites.<br/>"
+                "<b>3. Certificate Management:</b> Ensure SSL/TLS certificates are valid, not expired, and issued by a trusted CA."
+            )
+        if p in [3306, 1433, 5432]: 
+            return (
+                "<b>1. Network Segmentation:</b> Isolate database servers on internal subnets. Never expose them to the public internet.<br/>"
+                "<b>2. Access Control:</b> Restrict database access strictly to the application servers that require it.<br/>"
+                "<b>3. Authentication:</b> Enforce strong passwords and disable default/guest accounts."
+            )
+        return (
+            "<b>1. Investigate Exposure:</b> Review the necessity of this exposed service. If not required, disable it immediately.<br/>"
+            "<b>2. Access Restrictions:</b> Apply the Principle of Least Privilege by restricting access to authorized IPs only.<br/>"
+            "<b>3. Patch Management:</b> Ensure the underlying service or daemon is updated to the latest secure version."
+        )
+    else:
+        cat_lower = str(category).lower()
+        iss_lower = str(issue).lower()
+        
+        # Specific OS Inspection Categories
+        if "edr" in cat_lower or "av health" in cat_lower:
+            return (
+                "<b>1. Enable Defender/EDR:</b> Ensure Windows Defender or the third-party EDR agent is running and set to start automatically.<br/>"
+                "<b>2. Secure Boot:</b> Verify UEFI Secure Boot is enabled to prevent bootkits and rootkits from tampering with security software.<br/>"
+                "<b>3. Tamper Protection:</b> Enable Tamper Protection to prevent malicious actors from disabling the AV agent.<br/>"
+                "<b>4. Definition Updates:</b> Ensure virus definitions are configured to update automatically multiple times a day."
+            )
+        if "service status" in cat_lower:
+            return (
+                "<b>1. Disable Unnecessary Services:</b> Review all running services and disable those not required for the system's function (e.g., Spooler on servers).<br/>"
+                "<b>2. Service Accounts:</b> Run services with the lowest privilege necessary (LocalService/NetworkService) instead of LocalSystem.<br/>"
+                "<b>3. WMI Subscriptions:</b> Audit Windows Management Instrumentation (WMI) event consumers for malicious persistence.<br/>"
+                "<b>4. Service Permissions:</b> Ensure service executables have strict file permissions to prevent binary planting/DLL hijacking."
+            )
+        if "software inventory" in cat_lower:
+            return (
+                "<b>1. Vulnerability Management:</b> Update all third-party software (browsers, plugins, runtimes) to their latest secure versions.<br/>"
+                "<b>2. Application Allowlisting:</b> Implement AppLocker or Windows Defender Application Control (WDAC) to restrict unauthorized executables.<br/>"
+                "<b>3. Remove Unused Software:</b> Uninstall applications that are no longer needed to reduce the attack surface."
+            )
+        if "hotfix audit" in cat_lower or "update" in cat_lower or "patch" in cat_lower:
+            return (
+                "<b>1. Apply Missing Patches:</b> Immediately install missing Microsoft Knowledge Base (KB) security updates.<br/>"
+                "<b>2. Centralized Patching:</b> Implement an automated patch management solution (e.g., WSUS, SCCM, Intune).<br/>"
+                "<b>3. Patch Validation:</b> Ensure a process is in place to verify patches apply successfully without breaking system functionality."
+            )
+        if "os profiling" in cat_lower or "infrastructure link" in cat_lower:
+            return (
+                "<b>1. Upgrade EOL Systems:</b> Upgrade End-of-Life (EOL) operating systems to a supported version immediately.<br/>"
+                "<b>2. Firmware Updates:</b> Apply the latest BIOS/UEFI firmware updates from the hardware manufacturer to patch hardware vulnerabilities.<br/>"
+                "<b>3. Virtualization Security:</b> Enable Virtualization-based Security (VBS) and Hypervisor-protected Code Integrity (HVCI)."
+            )
+        if "user / group audit" in cat_lower or "privilege" in cat_lower or "account" in cat_lower:
+            return (
+                "<b>1. Enforce Least Privilege:</b> Audit the 'Administrators' group and remove any accounts that do not require permanent administrative access.<br/>"
+                "<b>2. LAPS Implementation:</b> Deploy Local Administrator Password Solution (LAPS) to randomize built-in local admin passwords.<br/>"
+                "<b>3. MFA Enforcement:</b> Require Multi-Factor Authentication for any account that requires administrative privileges."
+            )
+        if "persistence mechanisms" in cat_lower:
+            return (
+                "<b>1. Audit Autoruns:</b> Regularly review scheduled tasks, startup folder items, and Run/RunOnce registry keys for unauthorized entries.<br/>"
+                "<b>2. Restrict Scheduled Tasks:</b> Limit the ability to create Scheduled Tasks to authorized administrators only.<br/>"
+                "<b>3. Monitor Registry Keys:</b> Enable auditing on critical persistence registry keys to detect malicious modifications."
+            )
+        if "neighbor discovery" in cat_lower or "interface statistics" in cat_lower:
+            return (
+                "<b>1. Disable IPv6 (if unused):</b> If IPv6 is not actively routed, disable it to prevent SLAAC or DHCPv6 spoofing attacks.<br/>"
+                "<b>2. Secure DNS:</b> Configure secure DNS servers and verify that DNS Client settings have not been hijacked.<br/>"
+                "<b>3. Network Segmentation:</b> Ensure the host is placed on the correct network segment (VLAN) with appropriate ACLs."
+            )
+        if "active connections" in cat_lower or "network" in cat_lower or "firewall" in cat_lower:
+            return (
+                "<b>1. Default Deny Firewall:</b> Ensure the Windows Firewall is active with a 'default deny' inbound policy.<br/>"
+                "<b>2. Investigate Listeners:</b> Review active listening ports and immediately terminate any unauthorized services or backdoors.<br/>"
+                "<b>3. Disable Legacy Protocols:</b> Turn off LLMNR, NBT-NS, and mDNS to prevent local network poisoning and relay attacks."
+            )
+        if "audit" in cat_lower or "log" in cat_lower:
+            return (
+                "<b>1. Advanced Audit Policy:</b> Enable detailed tracking for logon events, process creation (with command lines), and object access.<br/>"
+                "<b>2. Log Forwarding:</b> Forward critical Windows Event Logs to a centralized SIEM using Windows Event Forwarding (WEF).<br/>"
+                "<b>3. Retention Policy:</b> Increase the maximum size of security event logs and set them to overwrite events as needed."
+            )
+            
+        # Fallback keyword matching for specific issues
+        if "smb" in iss_lower or "netbios" in iss_lower: 
+            return (
+                "<b>1. Disable SMBv1:</b> Fully uninstall the SMBv1 feature from Windows.<br/>"
+                "<b>2. SMB Signing:</b> Enforce 'Digitally sign communications (always)' in Group Policy.<br/>"
+                "<b>3. Disable NetBIOS:</b> Turn off NetBIOS over TCP/IP on all network interfaces."
+            )
+        if "rdp" in iss_lower or "remote" in iss_lower: 
+            return (
+                "<b>1. Enable NLA:</b> Require Network Level Authentication for all RDP connections.<br/>"
+                "<b>2. Restrict Users:</b> Only allow members of the 'Remote Desktop Users' group to connect remotely.<br/>"
+                "<b>3. Connection Limits:</b> Configure idle session timeouts and disconnected session timeouts to free up resources."
+            )
+            
+        return (
+            "<b>1. Baseline Review:</b> Compare the current configuration against industry standards like CIS Benchmarks or STIGs.<br/>"
+            "<b>2. Apply Hardening:</b> Implement recommended registry keys and Group Policy settings to secure the component.<br/>"
+            "<b>3. Continuous Monitoring:</b> Set up configuration drift detection to alert on unauthorized changes."
+        )
+
+def _create_remediation(elements, styles, findings: List[Dict], scan_type: str):
     """Create professional remediation roadmap with phased approach."""
     elements.append(Paragraph("7. Remediation Roadmap", styles['SectionHeading']))
     elements.append(Paragraph(
@@ -1019,73 +1171,76 @@ def _create_remediation(elements, styles):
         ParagraphStyle('SubText', parent=styles['Normal'], fontSize=10, textColor=EnterpriseTheme.TEXT_MUTED, spaceAfter=16)
     ))
     
-    # Phase cards with visual distinction
-    phases = [
-        {
-            "phase": "Phase 1",
-            "timeline": "0-7 Days",
-            "color": EnterpriseTheme.CRITICAL,
-            "bg": EnterpriseTheme.CRITICAL_BG,
-            "actions": [
-                "Patch all critical CVEs immediately",
-                "Isolate or restrict high-risk exposed management ports (RDP, SMB, Telnet)",
-                "Disable unnecessary services and unused accounts",
-                "Review and strengthen access controls"
-            ]
-        },
-        {
-            "phase": "Phase 2",
-            "timeline": "8-30 Days",
-            "color": EnterpriseTheme.HIGH,
-            "bg": EnterpriseTheme.HIGH_BG,
-            "actions": [
-                "Implement strict password policies and MFA where possible",
-                "Disable legacy protocols (NetBIOS, LLMNR, SMBv1)",
-                "Deploy and configure endpoint protection solutions",
-                "Establish security logging and monitoring"
-            ]
-        },
-        {
-            "phase": "Phase 3",
-            "timeline": "Ongoing",
-            "color": EnterpriseTheme.ACCENT,
-            "bg": EnterpriseTheme.PANEL_BG,
-            "actions": [
-                "Implement continuous vulnerability scanning",
-                "Deploy network segmentation and zero-trust principles",
-                "Establish incident response procedures",
-                "Regular security awareness training"
-            ]
-        }
-    ]
+
     
-    for phase in phases:
-        # Phase header
-        phase_header = Table([[
-            Paragraph(f"<b>{phase['phase']}</b>", ParagraphStyle(
-                'PhaseTitle', fontSize=12, textColor=phase['color'], fontName="Helvetica-Bold"
-            )),
-            Paragraph(f"<b>{phase['timeline']}</b>", ParagraphStyle(
-                'PhaseTimeline', fontSize=10, textColor=EnterpriseTheme.TEXT_MUTED, alignment=TA_RIGHT
-            ))
-        ]], colWidths=[3*inch, 3*inch])
-        phase_header.setStyle(TableStyle([
-            ('BOTTOMPADDING', (0,0), (-1,0), 8),
-            ('VALIGN', (0,0), (-1,0), 'MIDDLE'),
+    # Specific Remediation Steps Table
+    elements.append(Spacer(1, 0.2*inch))
+    elements.append(Paragraph("<b>Specific Vulnerability Remediation</b>", 
+                    ParagraphStyle('SpecificRemHeader', fontSize=12, textColor=EnterpriseTheme.PRIMARY, spaceAfter=10)))
+    
+    unique_findings = {}
+    for f in findings:
+        if not isinstance(f, dict): continue
+        if scan_type == "port_scan":
+            ident = f"Port {f.get('port', 'Unknown')} ({f.get('service', 'Unknown')})"
+        else:
+            ident = f.get("category", f"Port {f.get('port', 'Unknown')}")
+            
+        if ident not in unique_findings:
+            unique_findings[ident] = {
+                "risk": f.get("risk", "Low"),
+                "issue": f.get("issue", ""),
+                "port": f.get("port"),
+                "category": f.get("category", "Unknown"),
+                "service": f.get("service", "")
+            }
+            
+    # Sort by risk
+    risk_order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+    sorted_unique = sorted(unique_findings.values(), key=lambda x: risk_order.get(str(x['risk']).upper(), 4))
+    
+    rem_table_data = [[
+        Paragraph("<b>Vulnerability</b>", ParagraphStyle('RemTableHeader', fontSize=10, fontName="Helvetica-Bold", textColor=EnterpriseTheme.WHITE)),
+        Paragraph("<b>Risk</b>", ParagraphStyle('RemTableHeader', fontSize=10, fontName="Helvetica-Bold", textColor=EnterpriseTheme.WHITE, alignment=TA_CENTER)),
+        Paragraph("<b>Remediation Step</b>", ParagraphStyle('RemTableHeader', fontSize=10, fontName="Helvetica-Bold", textColor=EnterpriseTheme.WHITE)),
+    ]]
+    
+    has_specific = False
+    for f in sorted_unique[:20]: # Limit to top 20
+        risk = str(f['risk']).upper()
+        if risk not in ["CRITICAL", "HIGH", "MEDIUM"]:
+            continue
+            
+        has_specific = True
+        ident = f"Port {f['port']} ({f['service']})" if scan_type == "port_scan" else f['category']
+        step = _get_specific_remediation(f['category'], f['issue'], f['port'], scan_type)
+        risk_color = _get_risk_color(risk)
+        
+        rem_table_data.append([
+            Paragraph(ident, ParagraphStyle('RemCell', fontSize=9, textColor=EnterpriseTheme.TEXT)),
+            Paragraph(f"<font color='{risk_color.hexval()}'><b>{risk}</b></font>", ParagraphStyle('RemRisk', fontSize=9, alignment=TA_CENTER)),
+            Paragraph(step, ParagraphStyle('RemCell', fontSize=9, textColor=EnterpriseTheme.TEXT_LIGHT)),
+        ])
+        
+    if has_specific:
+        rem_table_data = safe_table_data(rem_table_data)
+        rem_table = Table(rem_table_data, colWidths=[1.8*inch, 0.8*inch, 4.4*inch])
+        rem_table.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), EnterpriseTheme.PRIMARY),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+            ('TOPPADDING', (0,0), (-1,-1), 8),
+            ('LEFTPADDING', (0,0), (-1,-1), 8),
+            ('RIGHTPADDING', (0,0), (-1,-1), 8),
+            ('LINEBELOW', (0,0), (-1,-2), 0.5, EnterpriseTheme.BORDER),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('BACKGROUND', (0,1), (-1,-1), EnterpriseTheme.PANEL_BG),
         ]))
-        elements.append(phase_header)
+        elements.append(rem_table)
+    else:
+        elements.append(Paragraph("No specific high/medium risk remediation steps required.", ParagraphStyle('NoRem', fontSize=10, textColor=EnterpriseTheme.TEXT_MUTED, italic=True)))
         
-        # Action items
-        for action in phase['actions']:
-            elements.append(Paragraph(
-                f"<font color='{phase['color'].hexval()}'>&#9654;</font> {action}",
-                ParagraphStyle('ActionItem', fontSize=9.5, leading=16, leftIndent=16, spaceAfter=6)
-            ))
-        
-        elements.append(Spacer(1, 0.15*inch))
-    
     # Compliance note
-    elements.append(Spacer(1, 0.15*inch))
+    elements.append(Spacer(1, 0.2*inch))
     elements.append(HRFlowable(width="100%", thickness=0.5, color=EnterpriseTheme.BORDER, spaceBefore=0, spaceAfter=12))
     elements.append(Paragraph(
         "<b>Compliance Alignment:</b> Addressing these findings improves alignment with NIST Cybersecurity Framework, "
@@ -1150,56 +1305,7 @@ def _create_technical_appendix(elements, styles, findings: List[Dict], scan_type
         
         elements.append(Spacer(1, 0.25*inch))
 
-    # Sample outputs section
-    elements.append(Paragraph("<b>Sample Command Outputs</b>", 
-                 ParagraphStyle('OutputHeader', fontSize=11, textColor=EnterpriseTheme.TEXT, spaceAfter=10)))
-    
-    for item in findings[:3]:  # Show first 3
-        if not isinstance(item, dict):
-            continue
-        
-        category = item.get("category", item.get("port", "Unknown"))
-        
-        # Create output box
-        output_elements = []
-        output_elements.append(Paragraph(
-            f"<b>{category}</b>",
-            ParagraphStyle('OutputCategory', fontSize=10, textColor=EnterpriseTheme.ACCENT)
-        ))
-        
-        cmd_info = item.get("command", {}) if isinstance(item.get("command"), dict) else {}
-        output = cmd_info.get("raw_output") if isinstance(cmd_info, dict) else None
-        if output:
-            # Clean and truncate output
-            clean_output = str(output)[:400].replace("<", "&lt;").replace(">", "&gt;")
-            lines = clean_output.split('\n')[:10] if clean_output else []  # First 10 lines
-            formatted_output = '\n'.join(lines)
-            if len(clean_output) > 400:
-                formatted_output += "\n[Output truncated...]"
-                
-                output_elements.append(Spacer(1, 6))
-                output_elements.append(Paragraph(
-                    f"<font face='Courier' size='8' color='{EnterpriseTheme.TEXT_MUTED.hexval()}'>{formatted_output}</font>",
-                    ParagraphStyle('OutputText', fontSize=8, fontName="Courier", leading=12, 
-                                 textColor=EnterpriseTheme.TEXT_MUTED)
-                ))
-        
-        # Wrap in styled container
-        if len(output_elements) > 1:
-            output_box = Table([[e] for e in output_elements], colWidths=[6*inch])
-            output_box.setStyle(TableStyle([
-                ('LEFTPADDING', (0,0), (-1,-1), 12),
-                ('RIGHTPADDING', (0,0), (-1,-1), 12),
-                ('TOPPADDING', (0,0), (-1,0), 10),
-                ('BOTTOMPADDING', (0,0), (-1,-1), 12),
-                ('BOX', (0,0), (-1,-1), 0.5, EnterpriseTheme.BORDER),
-                ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#0a0f1a")),
-                ('ROUNDEDCORNERS', (0,0), (-1,-1), 4),
-            ]))
-            elements.append(KeepTogether([
-                output_box,
-                Spacer(1, 0.15*inch)
-            ]))
+
 
     elements.append(PageBreak())
 
@@ -1300,7 +1406,7 @@ def generate_pdf(scan_data: Dict) -> str:
         print(f"[PDF ERROR] _create_attack_surface failed: {e}")
         raise
     try:
-        _create_remediation(elements, styles)
+        _create_remediation(elements, styles, findings, scan_type)
     except Exception as e:
         print(f"[PDF ERROR] _create_remediation failed: {e}")
         raise
